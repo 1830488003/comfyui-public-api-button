@@ -1,0 +1,71 @@
+<div id="cpab-settings" class="cpab-panel">
+  <div class="inline-drawer">
+    <div class="inline-drawer-toggle inline-drawer-header">
+      <b>默默画图</b>
+      <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+    </div>
+    <div class="inline-drawer-content">
+            <div class="cpab-contact cpab-contact-top">
+                <div class="cpab-section-title">联系方式</div>
+                <div>默默的角色卡QQ群1：118774271</div>
+                <div>默默的角色卡QQ群2：705941358</div>
+            </div>
+            <div class="cpab-intro">
+                <div class="cpab-section-title">使用说明</div>
+                <div>填写网址和卡密并保存，安装并挂载提供的画图世界书。AI 回复生成“绘画提示词”后，楼层里会出现生图按钮，点击即可画图。</div>
+            </div>
+      <p class="cpab-help">插件启动会自动获取最新服务器地址。新用户点击“领取免费50次”后，卡密会自动填写；免费额度用完后，填写购买的卡密继续使用。</p>
+
+      <label for="cpab-api-url">服务器地址（自动获取）</label>
+      <input id="cpab-api-url" class="text_pole" type="url" placeholder="插件启动后自动获取" readonly>
+
+      <label for="cpab-api-key">卡密</label>
+      <div class="cpab-key-row">
+        <input id="cpab-api-key" class="text_pole" type="password" autocomplete="off" placeholder="领取免费额度后自动填写，或填写购买的卡密">
+        <button id="cpab-toggle-key" class="menu_button" type="button" title="显示或隐藏卡密"><i class="fa-solid fa-eye"></i></button>
+      </div>
+
+      <div class="cpab-grid">
+        <div>
+          <label for="cpab-resolution">分辨率</label>
+          <select id="cpab-resolution" class="text_pole">
+            <option value="512x768">512 × 768 竖图</option>
+            <option value="512x512">512 × 512 方图</option>
+            <option value="768x512">768 × 512 横图</option>
+          </select>
+        </div>
+        <div>
+          <label for="cpab-steps">步数</label>
+          <select id="cpab-steps" class="text_pole">
+            <option value="4">4</option>
+            <option value="6" selected>6</option>
+            <option value="8">8</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="cpab-actions">
+        <button id="cpab-claim-trial" class="menu_button" type="button"><i class="fa-solid fa-gift"></i> 领取免费50次</button>
+        <button id="cpab-save" class="menu_button" type="button"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+        <button id="cpab-check-quota" class="menu_button" type="button"><i class="fa-solid fa-arrows-rotate"></i> 查询额度</button>
+      </div>
+
+      <div id="cpab-quota" class="cpab-quota is-idle">尚未查询额度</div>
+      <div id="cpab-queue-status" class="cpab-server-queue is-offline">服务器队列：队列离线</div>
+      <div id="cpab-status" class="cpab-status">就绪</div>
+      <p class="cpab-security">卡密仅保存在当前浏览器设置中；每次生成、额度和排队状态均由服务端校验。</p>
+    
+    <details class="cpab-tutorial">
+                    <summary>教程</summary>
+                    <ol class="cpab-tutorial-steps">
+                        <li>安装提供的画图世界书，在当前角色中挂载世界书，并启用“画图中文”。</li>
+                    </ol>
+                    <img class="cpab-tutorial-image" src="/scripts/extensions/third-party/comfyui-public-api-button/assets/tutorial-worldbook.png" alt="挂载画图世界书并启用画图中文">
+                    <ol class="cpab-tutorial-steps" start="2">
+                        <li>正常对话，让 AI 回复生成“绘画提示词”。</li>
+                        <li>楼层出现三个生图按钮后，点击需要的按钮开始画图；旁边可以查看当前排队任务数。</li>
+                    </ol>
+                    <img class="cpab-tutorial-image" src="/scripts/extensions/third-party/comfyui-public-api-button/assets/tutorial-buttons.png" alt="绘画提示词、三个生图按钮和排队任务数">
+                </details>
+        </div>
+  </div></div>

@@ -1,0 +1,746 @@
+// @ts-nocheck
+jQuery(async function () {
+    'use strict';
+
+    var extensionName = 'comfyui-public-api-button';
+    var extensionFolderPath = '/scripts/extensions/third-party/' + extensionName;
+    var endpointDiscoveryUrl = 'https://momo-draw-endpoint.1830488003.workers.dev/v1/endpoint';
+    var endpointDiscoveryIntervalMs = 30000;
+    var storageKey = 'comfyui_public_api_button_settings';
+    var allowedResolutions = ['512x768', '512x512', '768x512'];
+    var allowedSteps = [4, 6, 8];
+    var defaultSettings = {
+        apiUrl: 'https://magic-arthritis-maintain-altered.trycloudflare.com',
+        apiKey: '',
+        installId: '',
+        resolution: '512x768',
+        steps: 6
+    };
+    var contextGetter = function () {
+        return window.SillyTavern && window.SillyTavern.getContext
+            ? window.SillyTavern.getContext()
+            : null;
+    };
+    var extensionSettingsRoot = window.extension_settings || {};
+    extensionSettingsRoot[extensionName] = extensionSettingsRoot[extensionName] || {};
+    var lastQueueAhead = 0;
+    var queueState = 'offline';
+    var queuePollBusy = false;
+    var trialClaimPromise = null;
+    var purchaseNoticeShown = false;
+    var endpointDiscoveryPromise = null;
+    var lastEndpointDiscoveryAt = 0;
+
+    function loadLocalSettings() {
+        try {
+            return JSON.parse(localStorage.getItem(storageKey) || '{}') || {};
+        } catch (error) {
+            console.warn('[' + extensionName + '] settings parse failed', error);
+            return {};
+        }
+    }
+
+    function normalizeSteps(value) {
+        var numeric = Number(value);
+        return allowedSteps.indexOf(numeric) >= 0 ? numeric : defaultSettings.steps;
+    }
+
+    function normalizeResolution(value) {
+        var text = String(value || '');
+        return allowedResolutions.indexOf(text) >= 0 ? text : defaultSettings.resolution;
+    }
+
+    var settings = Object.assign({}, defaultSettings, loadLocalSettings(), extensionSettingsRoot[extensionName]);
+    settings.resolution = normalizeResolution(settings.resolution);
+    settings.steps = normalizeSteps(settings.steps);
+    Object.assign(extensionSettingsRoot[extensionName], settings);
+
+    function showToast(type, message) {
+        if (window.toastr && window.toastr[type]) {
+            window.toastr[type](message, '默默画图');
+        } else {
+            console[type === 'error' ? 'error' : 'log'](message);
+        }
+    }
+
+    function setStatus(text) {
+        $('#cpab-status').text(String(text || ''));
+    }
+
+    function purchaseMessage() {
+        return '免费额度已用完，请加QQ群联系群主获得更多额度。\n\n5元：500次\n10元：1200次\n20元：包月不限额\n\nQQ群1：118774271\nQQ群2：705941358';
+    }
+
+    function showPurchaseNotice(force) {
+        if (purchaseNoticeShown && !force) return;
+        purchaseNoticeShown = true;
+        var message = purchaseMessage();
+        if (window.toastr && window.toastr.warning) {
+            window.toastr.warning(message.replace(/\n/g, '<br>'), '额度已用完', {
+                closeButton: true,
+                timeOut: 0,
+                extendedTimeOut: 0,
+                escapeHtml: false
+            });
+        } else {
+            window.alert(message);
+        }
+    }
+
+    function handleQuotaNotice(quota) {
+        if (quota && quota.plan_type === 'credits' && Number(quota.remaining) <= 0) {
+            showPurchaseNotice(false);
+        } else if (quota && (quota.plan_type !== 'credits' || Number(quota.remaining) > 0)) {
+            purchaseNoticeShown = false;
+        }
+    }
+    function showTrialAlreadyClaimedNotice() {
+        var message = '本机已经领取过免费50次额度，需要更多额度请联系群主购买。\n\n5元：500次\n10元：1200次\n20元：包月不限额\n\nQQ群1：118774271\nQQ群2：705941358';
+        if (window.toastr && window.toastr.warning) {
+            window.toastr.warning(message.replace(/\n/g, '<br>'), '免费额度已经领取', {
+                closeButton: true,
+                timeOut: 0,
+                extendedTimeOut: 0,
+                escapeHtml: false
+            });
+        } else {
+            window.alert(message);
+        }
+    }
+
+
+    function saveSettings() {
+        settings.resolution = normalizeResolution(settings.resolution);
+        settings.steps = normalizeSteps(settings.steps);
+        Object.assign(extensionSettingsRoot[extensionName], settings);
+        localStorage.setItem(storageKey, JSON.stringify(settings));
+        if (typeof window.saveSettingsDebounced === 'function') window.saveSettingsDebounced();
+    }
+
+    function normalizeApiUrl(value) {
+        return String(value || '').trim().replace(/\/+$/, '');
+    }
+
+
+    async function refreshDiscoveredApiUrl(force, silent) {
+        var now = Date.now();
+        if (!force && normalizeApiUrl(settings.apiUrl) && now - lastEndpointDiscoveryAt < endpointDiscoveryIntervalMs) {
+            return normalizeApiUrl(settings.apiUrl);
+        }
+        if (endpointDiscoveryPromise) return endpointDiscoveryPromise;
+        endpointDiscoveryPromise = (async function () {
+            var response;
+            try {
+                response = await fetch(endpointDiscoveryUrl + '?t=' + Date.now(), { method: 'GET', cache: 'no-store' });
+            } catch (error) {
+                if (!silent) showToast('error', '无法查询最新服务器地址：' + (error.message || error));
+                throw new Error('无法查询最新服务器地址');
+            }
+            var data;
+            try { data = await response.json(); }
+            catch (error) { throw new Error('服务器地址公告返回格式错误'); }
+            if (!response.ok || !data || data.ok === false || !data.api_url) {
+                throw new Error((data && data.error) || '服务器地址公告暂不可用');
+            }
+            var discovered = normalizeApiUrl(data.api_url);
+            if (!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(discovered)) {
+                throw new Error('服务器地址公告中的网址无效');
+            }
+            var changed = discovered !== normalizeApiUrl(settings.apiUrl);
+            settings.apiUrl = discovered;
+            lastEndpointDiscoveryAt = Date.now();
+            saveSettings();
+            $('#cpab-api-url').val(discovered);
+            if (changed && !silent) showToast('success', '已自动获取最新画图服务器地址');
+            return discovered;
+        })();
+        try { return await endpointDiscoveryPromise; }
+        finally { endpointDiscoveryPromise = null; }
+    }
+
+    function requireApiUrl() {
+        var apiUrl = normalizeApiUrl(settings.apiUrl);
+        if (!apiUrl) throw new Error('请先填写网址');
+        if (!/^https?:\/\//i.test(apiUrl)) throw new Error('网址必须以 http:// 或 https:// 开头');
+        return apiUrl;
+    }
+
+    function createInstallId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID().replace(/-/g, '');
+        }
+        if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+            var bytes = new Uint8Array(24);
+            window.crypto.getRandomValues(bytes);
+            return Array.from(bytes).map(function (value) { return value.toString(16).padStart(2, '0'); }).join('');
+        }
+        return 'install_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    }
+
+    function ensureInstallId() {
+        var installId = String(settings.installId || '').trim();
+        if (!/^[A-Za-z0-9_-]{16,128}$/.test(installId)) {
+            installId = createInstallId();
+            settings.installId = installId;
+            saveSettings();
+        }
+        return installId;
+    }
+
+    async function claimTrialKey(apiUrl, silent) {
+        if (trialClaimPromise) return trialClaimPromise;
+        trialClaimPromise = (async function () {
+            setStatus('正在领取新用户50次免费额度...');
+            var response;
+            try {
+                response = await fetch(apiUrl + '/v1/trial', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ install_id: ensureInstallId() })
+                });
+            } catch (error) {
+                throw new Error('无法领取免费额度：' + (error.message || error));
+            }
+            var data;
+            try { data = await response.json(); }
+            catch (error) { throw new Error('免费额度接口返回的不是 JSON，HTTP ' + response.status); }
+            if (!response.ok || !data || data.ok === false || !data.api_key) {
+                var claimError = new Error((data && data.error) || ('免费额度领取失败，HTTP ' + response.status));
+                claimError.status = response.status;
+                claimError.payload = data;
+                throw claimError;
+            }
+            if (!data.created) {
+                setStatus('本机已经领取过免费50次额度');
+                if (!silent) showTrialAlreadyClaimedNotice();
+                return data;
+            }
+            settings.apiKey = String(data.api_key);
+            saveSettings();
+            $('#cpab-api-key').val(settings.apiKey);
+            setStatus('已领取新用户50次免费额度，可以直接画图');
+            if (!silent) showToast('success', '免费50次额度领取成功，卡密已自动填写');
+            return data;
+        })();
+        try { return await trialClaimPromise; }
+        finally { trialClaimPromise = null; }
+    }
+
+    async function requireConnectionSettings() {
+        await refreshDiscoveredApiUrl(false, true);
+        var apiUrl = requireApiUrl();
+        var apiKey = String(settings.apiKey || '').trim();
+        if (!apiKey) throw new Error('请先点击“领取免费50次”，或填写购买的卡密');
+        return { apiUrl: apiUrl, apiKey: apiKey };
+    }
+
+    async function apiRequest(path, options) {
+        var connection = await requireConnectionSettings();
+        var requestOptions = Object.assign({}, options || {});
+        requestOptions.headers = Object.assign({
+            'X-API-Key': connection.apiKey,
+            'Content-Type': 'application/json'
+        }, requestOptions.headers || {});
+        var response;
+        try {
+            response = await fetch(connection.apiUrl + path, requestOptions);
+        } catch (error) {
+            var previousUrl = connection.apiUrl;
+            try {
+                var latestUrl = await refreshDiscoveredApiUrl(true, true);
+                if (latestUrl && latestUrl !== previousUrl) {
+                    connection.apiUrl = latestUrl;
+                    response = await fetch(connection.apiUrl + path, requestOptions);
+                }
+            } catch (discoveryError) {
+                console.warn('[' + extensionName + '] endpoint rediscovery failed', discoveryError);
+            }
+            if (!response) throw new Error('无法连接服务器：' + (error.message || error));
+        }
+        var data;
+        try {
+            data = await response.json();
+        } catch (error) {
+            throw new Error('API 返回的不是 JSON，HTTP ' + response.status);
+        }
+        if (!response.ok || !data || data.ok === false) {
+            var apiError = new Error((data && data.error) || ('API 请求失败，HTTP ' + response.status));
+            apiError.status = response.status;
+            apiError.payload = data;
+            throw apiError;
+        }
+        return data;
+    }
+
+    function formatDate(value) {
+        if (!value) return '—';
+        var date = new Date(value);
+        return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('zh-CN', { hour12: false });
+    }
+
+    function formatQuota(quota) {
+        if (!quota) return '额度数据为空';
+        var name = quota.name ? '【' + quota.name + '】 ' : '';
+        if (quota.plan_type === 'credits') {
+            return name + '次数卡：剩余 ' + quota.remaining + ' / ' + quota.total + ' 次，已使用 ' + quota.used + ' 次';
+        }
+        if (!quota.activated) {
+            return name + '时长卡：未激活；首次成功出图后开始计算 ' + quota.duration_days + ' 天';
+        }
+        return name + '时长卡：剩余约 ' + quota.days_remaining + ' 天；到期时间 ' + formatDate(quota.expires_at);
+    }
+
+    async function refreshQuota(silent) {
+        var $quota = $('#cpab-quota');
+        $quota.removeClass('is-ok is-error').addClass('is-idle').text('正在查询额度...');
+        try {
+            var data = await apiRequest('/v1/quota', { method: 'GET' });
+            $quota.removeClass('is-idle is-error').addClass('is-ok').text(formatQuota(data.quota));
+            handleQuotaNotice(data.quota);
+            return data.quota;
+        } catch (error) {
+            $quota.removeClass('is-idle is-ok').addClass('is-error').text(error.message || String(error));
+            if (!silent) showToast('error', error.message || String(error));
+            throw error;
+        }
+    }
+
+    function queueText() {
+        return queueState === 'offline' ? '队列离线' : '前方 ' + lastQueueAhead;
+    }
+
+    function updateQueueBadges() {
+        var stateClass = queueState === 'offline' ? 'is-offline' : (lastQueueAhead > 0 ? 'is-busy' : 'is-idle');
+        var text = queueText();
+        $('.cpab-queue-badge').removeClass('is-idle is-busy is-offline').addClass(stateClass).text(text);
+        $('#cpab-queue-status').removeClass('is-idle is-busy is-offline').addClass(stateClass).text('服务器队列：' + text);
+    }
+
+    async function refreshQueueStatus(silent) {
+        if (queuePollBusy) return;
+        if (!normalizeApiUrl(settings.apiUrl) || !String(settings.apiKey || '').trim()) {
+            queueState = 'offline';
+            updateQueueBadges();
+            return;
+        }
+        queuePollBusy = true;
+        try {
+            var data = await apiRequest('/v1/status', { method: 'GET' });
+            lastQueueAhead = Math.max(0, Number(data.queue && data.queue.ahead) || 0);
+            queueState = 'online';
+            updateQueueBadges();
+        } catch (error) {
+            queueState = 'offline';
+            updateQueueBadges();
+            if (!silent) showToast('error', error.message || String(error));
+        } finally {
+            queuePollBusy = false;
+        }
+    }
+
+    function cleanPrompt(value) {
+        var prompt = String(value || '');
+        prompt = prompt.replace(/<br\s*\/?\s*>/gi, '\n');
+        prompt = prompt.replace(/<\/?p(?:\s[^>]*)?>/gi, '\n');
+        prompt = prompt.replace(/<\/?(?:details|summary)(?:\s[^>]*)?>/gi, '');
+        prompt = $('<textarea>').html(prompt).text();
+        prompt = prompt.replace(/^\s*(?:\x60{3}[a-z0-9_-]*\s*)?/i, '');
+        prompt = prompt.replace(/\s*\x60{3}\s*$/i, '');
+        return prompt.trim();
+    }
+
+    function extractImagePrompt(messageText) {
+        var text = String(messageText || '').trim();
+        if (!text) throw new Error('消息内容为空，无法提取提示词');
+        var patterns = [
+            /\[ImagePrompt\|([\s\S]*?)\](?![\s\S]*\[ImagePrompt\|)/i,
+            /<ImagePrompt(?:\s[^>]*)?>([\s\S]*?)<\/ImagePrompt>/i,
+            /<image_prompt(?:\s[^>]*)?>([\s\S]*?)<\/image_prompt>/i,
+            /<details(?:\s[^>]*)?>[\s\S]*?<summary(?:\s[^>]*)?>\s*(?:绘画|绘图|出图|图片|Image)\s*提示词\s*<\/summary>([\s\S]*?)<\/details>/i,
+            /【\s*(?:绘画|绘图|出图|图片)\s*提示词\s*】\s*([\s\S]*?)(?=\n\s*【|$)/i,
+            /(?:^|\n)\s*(?:#{1,6}\s*)?(?:绘画|绘图|出图|图片)\s*提示词\s*[：:]\s*([\s\S]*?)(?=\n\s*(?:#{1,6}\s*)?(?:负面提示词|Negative\s*Prompt|正文|说明)\s*[：:]|$)/i
+        ];
+        for (var i = 0; i < patterns.length; i++) {
+            var match = text.match(patterns[i]);
+            var prompt = match && cleanPrompt(match[1]);
+            if (prompt) return prompt;
+        }
+        throw new Error('没有识别到绘画提示词');
+    }
+
+    function messageHasPrompt(message) {
+        if (!message || message.is_user || !message.mes) return false;
+        try {
+            return !!extractImagePrompt(message.mes);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function getButtonContainer($mes) {
+        var $container = $mes.find('.cpab-bottom-buttons').first();
+        if ($container.length) return $container;
+        var $text = $mes.find('.mes_text').first();
+        if ($text.length) {
+            $container = $('<div class="cpab-bottom-buttons"></div>');
+            $text.after($container);
+            return $container;
+        }
+        var $block = $mes.find('.mes_block').first();
+        if ($block.length) {
+            $container = $('<div class="cpab-bottom-buttons"></div>');
+            $block.append($container);
+            return $container;
+        }
+        return $mes.find('.extraMesButtons').first().length ? $mes.find('.extraMesButtons').first() : $mes.find('.mes_buttons').first();
+    }
+
+    function ensureButtonForMessage(messageId) {
+        var context = contextGetter();
+        var message = context && context.chat ? context.chat[messageId] : null;
+        var $mes = $('.mes[mesid="' + messageId + '"]');
+        if (!$mes.length) return;
+        if (!messageHasPrompt(message)) {
+            $mes.find('.cpab-bottom-buttons').remove();
+            return;
+        }
+        var $target = getButtonContainer($mes);
+        if (!$target.length) return;
+        if (!$target.find('.cpab-mes-button').length) {
+            $target.append('<div class="mes_button cpab-mes-button" role="button" tabindex="0" title="生成图片"><i class="fa-solid fa-image"></i></div>');
+        }
+        if (!$target.find('.cpab-random-button').length) {
+            $target.append('<div class="mes_button cpab-random-button" role="button" tabindex="0" title="随机重绘"><i class="fa-solid fa-rotate"></i></div>');
+        }
+        if (!$target.find('.cpab-optimize-button').length) {
+            $target.append('<div class="mes_button cpab-optimize-button" role="button" tabindex="0" title="固定种子，步数 +2 优化（最高 8 步）"><i class="fa-solid fa-wand-magic-sparkles"></i></div>');
+        }
+        if (!$target.find('.cpab-queue-badge').length) {
+            $target.append('<span class="cpab-queue-badge" title="当前提交任务前预计需要等待的任务数"></span>');
+        }
+        $target.find('.cpab-mes-button, .cpab-random-button, .cpab-optimize-button').attr('data-cpab-mesid', String(messageId));
+        updateQueueBadges();
+    }
+
+    function refreshButtons() {
+        var context = contextGetter();
+        var chat = context && context.chat ? context.chat : [];
+        chat.forEach(function (_, index) { ensureButtonForMessage(index); });
+    }
+
+    function setButtonState($button, state, title) {
+        if (!$button || !$button.length) return;
+        $button.removeClass('is-loading is-success is-error');
+        if (state) $button.addClass(state);
+        if (title) $button.attr('title', title);
+    }
+
+    function getGenerationMeta(messageId) {
+        var context = contextGetter();
+        var message = context && context.chat ? context.chat[messageId] : null;
+        var meta = message && message.extra ? message.extra.cpab_last_generation : null;
+        return meta && typeof meta === 'object' ? meta : null;
+    }
+
+    async function uploadImage(base64Data, format) {
+        var context = contextGetter();
+        var characterName = String((context && (context.name2 || context.characterName)) || 'ComfyUI-Public').trim();
+        var payload = {
+            image: base64Data,
+            format: format || 'png',
+            ch_name: characterName || 'ComfyUI-Public',
+            filename: 'public_api_' + Date.now()
+        };
+        var data;
+        try {
+            data = await $.ajax({
+                url: '/api/images/upload',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(payload)
+            });
+        } catch (error) {
+            var details = error && (error.responseJSON || error.responseText || error.statusText);
+            throw new Error('图片保存到酒馆失败：' + (typeof details === 'string' ? details : JSON.stringify(details || error)));
+        }
+        if (!data || !data.path) throw new Error('酒馆没有返回图片保存路径');
+        return data.path;
+    }
+
+    async function emitMessageUpdated(messageId) {
+        var eventSource = window.eventSource || (window.SillyTavern && window.SillyTavern.eventSource);
+        var eventTypes = window.event_types || (window.SillyTavern && window.SillyTavern.event_types) || {};
+        if (eventSource && eventSource.emit && eventTypes.MESSAGE_UPDATED) {
+            await eventSource.emit(eventTypes.MESSAGE_UPDATED, Number(messageId));
+        }
+    }
+
+    async function saveChatSafe() {
+        var context = contextGetter();
+        if (context && typeof context.saveChat === 'function') {
+            await context.saveChat();
+        }
+    }
+
+    function delay(ms) {
+        return new Promise(function (resolve) { setTimeout(resolve, ms); });
+    }
+
+    async function forceSaveViaOfficialEditor(messageId, messageText) {
+        var scrollContainer = document.querySelector('#chat');
+        var previousScrollTop = scrollContainer ? scrollContainer.scrollTop : null;
+        var $messageBlock = $('#chat .mes[mesid="' + messageId + '"]');
+        if (!$messageBlock.length) return false;
+
+        var $editButton = $messageBlock.find('.mes_edit').first();
+        if (!$editButton.length) return false;
+        $editButton.trigger('click');
+        await delay(60);
+
+        var $textarea = $messageBlock.find('.edit_textarea:visible').first();
+        if (!$textarea.length) return false;
+        $textarea.val(String(messageText || ''));
+        var textareaElement = $textarea.get(0);
+        if (textareaElement) {
+            textareaElement.dispatchEvent(new Event('input', { bubbles: true }));
+            textareaElement.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        await delay(60);
+        var $doneButton = $messageBlock.find('.mes_edit_done:visible').first();
+        if (!$doneButton.length) return false;
+        $doneButton.trigger('click');
+        await delay(150);
+
+        if (scrollContainer && previousScrollTop !== null) {
+            scrollContainer.scrollTop = previousScrollTop;
+        }
+        return true;
+    }
+
+    async function injectImage(messageId, imageUrl, prompt, quota, generationMeta) {
+        var context = contextGetter();
+        var message = context && context.chat ? context.chat[messageId] : null;
+        if (!message) throw new Error('找不到目标楼层');
+        message.extra = message.extra || {};
+        message.extra.media = Array.isArray(message.extra.media) ? message.extra.media : [];
+        message.extra.media.push({ url: imageUrl, title: prompt, type: 'image', source: 'generated' });
+        message.extra.media_index = message.extra.media.length - 1;
+        message.extra.inline_image = true;
+        message.extra.image = imageUrl;
+        message.extra.cpab_last_prompt = prompt;
+        message.extra.cpab_last_quota = quota || null;
+        message.extra.cpab_last_generation = generationMeta;
+
+        if (
+            Array.isArray(message.swipes)
+            && typeof message.swipe_id === 'number'
+            && message.swipes[message.swipe_id] !== undefined
+        ) {
+            message.swipes[message.swipe_id] = message.mes;
+        }
+
+        await saveChatSafe();
+        await emitMessageUpdated(messageId);
+        var editorRefreshed = await forceSaveViaOfficialEditor(messageId, message.mes);
+        if (!editorRefreshed) {
+            await emitMessageUpdated(messageId);
+        }
+        refreshButtons();
+    }
+
+    function readGenerationOptions() {
+        var parts = normalizeResolution(settings.resolution).split('x');
+        return { width: Number(parts[0]), height: Number(parts[1]), steps: normalizeSteps(settings.steps) };
+    }
+
+    function buildGenerationRequest(messageId, mode) {
+        var options = readGenerationOptions();
+        var last = getGenerationMeta(messageId);
+        var payload = { width: options.width, height: options.height, steps: options.steps };
+        var actionLabel = '生成图片';
+        if (mode === 'random') {
+            payload.steps = last && allowedSteps.indexOf(Number(last.steps)) >= 0 ? Number(last.steps) : options.steps;
+            actionLabel = '随机重绘';
+        }
+        if (mode === 'optimize') {
+            if (!last) throw new Error('这层还没有历史图片，请先点一次生成图片或随机重绘');
+            if (!Number.isFinite(Number(last.seed))) throw new Error('找不到上一次生成的 seed');
+            if (!Number.isFinite(Number(last.steps))) throw new Error('找不到上一次生成的步数');
+            payload.seed = Number(last.seed);
+            payload.steps = Math.min(8, Number(last.steps) + 2);
+            actionLabel = '固定 seed 优化（' + last.steps + ' → ' + payload.steps + ' 步）';
+        }
+        return { payload: payload, actionLabel: actionLabel };
+    }
+
+    async function generateForMessage(messageId, $button, mode) {
+        var context = contextGetter();
+        var message = context && context.chat ? context.chat[messageId] : null;
+        if (!message) throw new Error('找不到对应楼层消息');
+        var prompt = extractImagePrompt(message.mes);
+        var request = buildGenerationRequest(messageId, mode || 'normal');
+        request.payload.prompt = prompt;
+        setButtonState($button, 'is-loading', request.actionLabel + '中');
+        await refreshQueueStatus(true);
+        setStatus('楼层 ' + messageId + '：' + request.actionLabel + '，服务器前方 ' + lastQueueAhead + ' 个任务');
+        try {
+            var data = await apiRequest('/v1/generate', { method: 'POST', body: JSON.stringify(request.payload) });
+            setStatus('出图完成，正在保存到酒馆...');
+            var imageUrl = await uploadImage(data.data, data.format || 'png');
+            var generationMeta = {
+                seed: Number(data.seed),
+                steps: Number(data.steps),
+                prompt: prompt,
+                imageUrl: imageUrl,
+                savedAt: Date.now()
+            };
+            await injectImage(messageId, imageUrl, prompt, data.quota, generationMeta);
+            $('#cpab-quota').removeClass('is-idle is-error').addClass('is-ok').text(formatQuota(data.quota));
+            handleQuotaNotice(data.quota);
+            setButtonState($button, 'is-success', '出图成功，点击可再次生成');
+            setStatus('楼层 ' + messageId + '：出图完成，seed=' + data.seed + '，steps=' + data.steps);
+            showToast('success', '图片已注入楼层，' + formatQuota(data.quota));
+            setTimeout(function () {
+                setButtonState($button, '', mode === 'random' ? '随机重绘' : (mode === 'optimize' ? '固定种子，步数 +2 优化（最高 8 步）' : '生成图片'));
+            }, 2500);
+        } finally {
+            refreshQueueStatus(true).catch(function () {});
+        }
+    }
+
+    async function handleGenerateClick(event, mode) {
+        event.preventDefault();
+        event.stopPropagation();
+        var $button = $(event.currentTarget);
+        var messageId = Number($button.attr('data-cpab-mesid'));
+        try {
+            await generateForMessage(messageId, $button, mode);
+        } catch (error) {
+            setButtonState($button, 'is-error', '生图失败，点击重试');
+            setStatus('生图失败：' + (error.message || error));
+            showToast('error', error.message || String(error));
+            if (Number(error.status) === 402 || /次数已用完|卡密已过期/.test(String(error.message || ''))) showPurchaseNotice(true);
+            refreshQuota(true).catch(function () {});
+            refreshQueueStatus(true).catch(function () {});
+        }
+    }
+
+    function loadSettingsToUi() {
+        $('#cpab-api-url').val(settings.apiUrl || '');
+        $('#cpab-api-key').val(settings.apiKey || '');
+        $('#cpab-resolution').val(normalizeResolution(settings.resolution));
+        $('#cpab-steps').val(String(normalizeSteps(settings.steps)));
+        updateQueueBadges();
+    }
+
+    function collectSettingsFromUi() {
+        settings.apiUrl = normalizeApiUrl($('#cpab-api-url').val());
+        settings.apiKey = String($('#cpab-api-key').val() || '').trim();
+        settings.resolution = normalizeResolution($('#cpab-resolution').val());
+        settings.steps = normalizeSteps($('#cpab-steps').val());
+    }
+
+    function bindSettingsEvents() {
+        $('#cpab-save').on('click', async function () {
+            collectSettingsFromUi();
+            saveSettings();
+            refreshButtons();
+            try {
+                if (settings.apiKey) await Promise.all([refreshQuota(true), refreshQueueStatus(true)]);
+                setStatus(settings.apiKey ? '设置已保存' : '设置已保存，请点击领取免费50次或填写购买的卡密');
+                showToast('success', '默默画图设置已保存');
+            } catch (error) {
+                setStatus('保存后连接失败：' + (error.message || error));
+                showToast('error', error.message || String(error));
+            }
+        });
+        $('#cpab-claim-trial').on('click', async function () {
+            var $button = $(this);
+            var currentKey = String($('#cpab-api-key').val() || settings.apiKey || '').trim();
+            if (/^trial_/i.test(currentKey)) {
+                showTrialAlreadyClaimedNotice();
+                setStatus('本机已经领取过免费50次额度');
+                return;
+            }
+            if (currentKey) {
+                showToast('warning', '当前已有购买卡密，不会用免费卡覆盖');
+                return;
+            }
+            $button.prop('disabled', true).addClass('is-loading');
+            try {
+                await refreshDiscoveredApiUrl(true, true);
+                var data = await claimTrialKey(requireApiUrl(), false);
+                if (data && data.created) {
+                    await Promise.all([refreshQuota(true), refreshQueueStatus(true)]);
+                }
+            } catch (error) {
+                setStatus('免费额度领取失败：' + (error.message || error));
+                showToast('error', error.message || String(error));
+                if (Number(error.status) === 429) showTrialAlreadyClaimedNotice();
+            } finally {
+                $button.prop('disabled', false).removeClass('is-loading');
+            }
+        });
+        $('#cpab-check-quota').on('click', async function () {
+            collectSettingsFromUi();
+            saveSettings();
+            try {
+                await Promise.all([refreshQuota(false), refreshQueueStatus(false)]);
+                setStatus('额度和服务器队列查询成功');
+            } catch (error) {
+                setStatus('查询失败：' + (error.message || error));
+            }
+        });
+        $('#cpab-toggle-key').on('click', function () {
+            var $key = $('#cpab-api-key');
+            var visible = $key.attr('type') === 'text';
+            $key.attr('type', visible ? 'password' : 'text');
+            $(this).find('i').toggleClass('fa-eye', visible).toggleClass('fa-eye-slash', !visible);
+        });
+    }
+
+    function bindGlobalEvents() {
+        $(document).off('click.cpabGenerate').on('click.cpabGenerate', '.cpab-mes-button', function (event) { handleGenerateClick(event, 'normal'); });
+        $(document).off('click.cpabRandom').on('click.cpabRandom', '.cpab-random-button', function (event) { handleGenerateClick(event, 'random'); });
+        $(document).off('click.cpabOptimize').on('click.cpabOptimize', '.cpab-optimize-button', function (event) { handleGenerateClick(event, 'optimize'); });
+        var eventSource = window.eventSource || (window.SillyTavern && window.SillyTavern.eventSource);
+        var eventTypes = window.event_types || (window.SillyTavern && window.SillyTavern.event_types) || {};
+        if (eventSource && eventSource.on) {
+            if (eventTypes.CHARACTER_MESSAGE_RENDERED) eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, ensureButtonForMessage);
+            if (eventTypes.CHAT_CHANGED) eventSource.on(eventTypes.CHAT_CHANGED, refreshButtons);
+            if (eventTypes.MESSAGE_SWIPED) eventSource.on(eventTypes.MESSAGE_SWIPED, refreshButtons);
+            if (eventTypes.MESSAGE_UPDATED) eventSource.on(eventTypes.MESSAGE_UPDATED, refreshButtons);
+            if (eventTypes.MESSAGE_DELETED) eventSource.on(eventTypes.MESSAGE_DELETED, refreshButtons);
+        }
+        setInterval(refreshButtons, 3000);
+        setInterval(function () { refreshQueueStatus(true).catch(function () {}); }, 2000);
+    }
+
+    try {
+        var settingsHtml = await $.get(extensionFolderPath + '/settings.html');
+        $('#extensions_settings2').append(settingsHtml);
+        loadSettingsToUi();
+        bindSettingsEvents();
+        bindGlobalEvents();
+        refreshButtons();
+        try {
+            await refreshDiscoveredApiUrl(true, false);
+        } catch (error) {
+            setStatus('最新地址获取失败，将尝试已保存地址：' + (error.message || error));
+        }
+        if (settings.apiUrl && settings.apiKey) {
+            try {
+                await Promise.all([refreshQuota(true), refreshQueueStatus(true)]);
+            } catch (error) {
+                setStatus('卡密连接失败：' + (error.message || error));
+            }
+        } else {
+            setStatus('请点击领取免费50次，或填写购买的卡密');
+        }
+        console.log('[' + extensionName + '] loaded');
+    } catch (error) {
+        console.error('[' + extensionName + '] init failed', error);
+        showToast('error', '插件初始化失败：' + (error.message || error));
+    }
+});
