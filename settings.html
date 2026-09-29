@@ -60,6 +60,19 @@
         <span>自动识别新楼层的绘画提示词并立即生图（每次会消耗额度）</span>
       </label>
 
+      <div class="cpab-style-section">
+        <div class="cpab-style-head">
+          <strong>画风增强（25选1）</strong>
+          <span>点击即保存，下次继续使用</span>
+        </div>
+        <div id="cpab-style-buttons" class="cpab-style-buttons"></div>
+        <div class="cpab-style-preview">
+          <div id="cpab-style-current"></div>
+          <div id="cpab-style-prefix"></div>
+          <div id="cpab-style-suffix"></div>
+        </div>
+      </div>
+
       <div class="cpab-actions">
         <button id="cpab-claim-trial" class="menu_button" type="button"><i class="fa-solid fa-gift"></i> 领取免费50次</button>
         <button id="cpab-save" class="menu_button" type="button"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
@@ -79,6 +92,7 @@
                     <img class="cpab-tutorial-image" src="/scripts/extensions/third-party/comfyui-public-api-button/assets/tutorial-worldbook.png" alt="挂载画图世界书并启用画图中文">
                     <ol class="cpab-tutorial-steps" start="2">
                         <li>正常对话，让 AI 回复生成“绘画提示词”。</li>
+                        <li>先在“画风增强”中选择一种风格，插件会自动把风格前缀和后缀拼接到画面提示词中，并保存选择。</li>
                         <li>楼层出现三个生图按钮后，可以点击按钮画图；也可以在设置中开启“自动识别新楼层并立即生图”。</li>
                     </ol>
                     <img class="cpab-tutorial-image" src="/scripts/extensions/third-party/comfyui-public-api-button/assets/tutorial-buttons.png" alt="绘画提示词、三个生图按钮和排队任务数">

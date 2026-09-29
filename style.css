@@ -38,6 +38,69 @@
   flex-wrap: wrap;
 }
 
+.cpab-style-section {
+  margin-top: 12px;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.cpab-style-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
+  flex-wrap: wrap;
+}
+
+.cpab-style-head span {
+  opacity: 0.72;
+  font-size: 0.85em;
+}
+
+.cpab-style-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  max-height: 310px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.cpab-style-button {
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 7px;
+  white-space: normal;
+  line-height: 1.2;
+  font-size: 0.84em;
+}
+
+.cpab-style-button.is-selected {
+  border-color: #69d98e !important;
+  background: rgba(69, 196, 108, 0.22) !important;
+  color: #a5f3bc !important;
+  box-shadow: inset 0 0 0 1px rgba(69, 196, 108, 0.45);
+}
+
+.cpab-style-preview {
+  margin-top: 9px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 0.82em;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+#cpab-style-current {
+  margin-bottom: 4px;
+  color: #a5f3bc;
+  font-weight: 700;
+}
+
 .cpab-quota,
 .cpab-server-queue {
   margin-top: 10px;
@@ -143,6 +206,10 @@
 @media (max-width: 560px) {
   .cpab-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cpab-style-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
