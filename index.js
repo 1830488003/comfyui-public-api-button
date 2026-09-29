@@ -27,7 +27,7 @@ jQuery(async function () {
         { id: 'epic-concept-art', name: 'Epic Concept Art', prefix: 'cinematic AAA concept art, sweeping vistas, detailed structures', suffix: 'heroic composition, atmospheric depth, ultra-polished rendering' },
         { id: 'ethereal-fantasy', name: 'Ethereal Fantasy', prefix: 'ethereal fantasy concept art', suffix: 'magnificent, celestial, painterly, epic, majestic, dreamy cover art' },
         { id: 'dark-fantasy-painterly', name: 'Dark Fantasy Painterly', prefix: 'dark high-fantasy digital painting, brooding atmosphere', suffix: 'dramatic shadows, mystical lighting, richly rendered environments' },
-        { id: 'ghibli-inspired', name: 'Ghibli-Inspired', prefix: 'whimsical hand-painted fantasy, gentle storytelling atmosphere', suffix: 'soft painterly lighting, warm palettes, lush environmental detail' },
+        { id: 'ghibli-inspired', name: 'Ghibli-Inspired', prefix: 'Studio Ghibli-inspired anime illustration, hand-drawn 2D animation, whimsical Japanese animated film aesthetic, simplified expressive anime character design', suffix: 'cel-painted background, clean anime facial features, soft painterly lighting, warm palette, lush environmental detail, clearly illustrated, non-photorealistic', prefixWeight: 1.45, suffixWeight: 1.35 },
         { id: 'dark-moebius', name: 'Dark Moebius', prefix: 'graphic surrealist fantasy, stark linework, dreamlike architecture', suffix: 'limited palette, angular composition, uncanny atmospheric tension' },
         { id: 'comic-book', name: 'Comic Book', prefix: 'western comic book style, strong inked outlines, bold graphic look', suffix: 'halftone shading, vivid flat colors, dynamic heroic composition' },
         { id: 'manga', name: 'Manga', prefix: 'black-and-white manga illustration, strong inking, panel-style contrast', suffix: 'screen-tone shading, stylized expressions, dynamic motion lines' },
@@ -139,7 +139,11 @@ jQuery(async function () {
 
     function buildStyledPrompt(scenePrompt, presetId) {
         var preset = getStylePreset(presetId);
-        return [preset.prefix, String(scenePrompt || '').trim(), preset.suffix]
+        var prefixWeight = Number(preset.prefixWeight) || 1.35;
+        var suffixWeight = Number(preset.suffixWeight) || 1.25;
+        var weightedPrefix = '(' + preset.prefix + ':' + prefixWeight.toFixed(2) + ')';
+        var weightedSuffix = '(' + preset.suffix + ':' + suffixWeight.toFixed(2) + ')';
+        return [weightedPrefix, String(scenePrompt || '').trim(), weightedSuffix]
             .filter(Boolean)
             .join(', ');
     }
