@@ -16,7 +16,7 @@ jQuery(async function () {
         apiKey: '',
         installId: '',
         resolution: '512x768',
-        steps: 6
+        steps: 4
     };
     var contextGetter = function () {
         return window.SillyTavern && window.SillyTavern.getContext
