@@ -775,7 +775,13 @@ jQuery(async function () {
         if (!$target.find('.cpab-queue-badge').length) {
             $target.append('<span class="cpab-queue-badge" title="当前提交任务前预计需要等待的任务数"></span>');
         }
+        if (!$target.find('.cpab-inline-style-row').length) {
+            var $styleRow = $('<label class="cpab-inline-style-row"><span>画风</span><select class="cpab-inline-style-select text_pole" title="切换本层及后续生图使用的画风"></select></label>');
+            $target.append($styleRow);
+            populateStylePresetSelect($styleRow.find('.cpab-inline-style-select'));
+        }
         $target.find('.cpab-mes-button, .cpab-random-button, .cpab-optimize-button').attr('data-cpab-mesid', String(messageId));
+        $target.find('.cpab-inline-style-select').val(getStylePreset(settings.stylePreset).id);
         updateQueueBadges();
     }
 
@@ -1003,24 +1009,46 @@ jQuery(async function () {
         updateQueueBadges();
     }
 
-    function renderStylePresetSelect() {
+    function populateStylePresetSelect($select) {
+        var selected = getStylePreset(settings.stylePreset);
+        if (!$select.length) return;
+        $select.each(function () {
+            var $current = $(this);
+            $current.empty();
+            var groups = {};
+            stylePresets.forEach(function (preset) {
+                var ui = getStylePresetUi(preset.id);
+                if (!groups[ui.group]) {
+                    groups[ui.group] = $('<optgroup></optgroup>').attr('label', ui.group);
+                    $current.append(groups[ui.group]);
+                }
+                groups[ui.group].append($('<option></option>').val(preset.id).text(ui.label));
+            });
+            $current.val(selected.id);
+        });
+    }
+
+    function syncStylePresetControls() {
+        settings.stylePreset = normalizeStylePreset(settings.stylePreset);
         var selected = getStylePreset(settings.stylePreset);
         var selectedUi = getStylePresetUi(selected.id);
-        var $select = $('#cpab-style-select');
-        if (!$select.length) return;
-        $select.empty();
-        var groups = {};
-        stylePresets.forEach(function (preset) {
-            var ui = getStylePresetUi(preset.id);
-            if (!groups[ui.group]) {
-                groups[ui.group] = $('<optgroup></optgroup>').attr('label', ui.group);
-                $select.append(groups[ui.group]);
-            }
-            groups[ui.group].append($('<option></option>').val(preset.id).text(ui.label));
-        });
-        $select.val(selected.id);
+        $('#cpab-style-select, .cpab-inline-style-select').val(selected.id);
         $('#cpab-style-current').text('当前风格：' + selectedUi.label);
         $('#cpab-style-description').text(selectedUi.description);
+    }
+
+    function renderStylePresetSelect() {
+        populateStylePresetSelect($('#cpab-style-select'));
+        syncStylePresetControls();
+    }
+
+    function applyStylePresetSelection(presetId) {
+        settings.stylePreset = normalizeStylePreset(presetId);
+        saveSettings();
+        syncStylePresetControls();
+        var selectedUi = getStylePresetUi(settings.stylePreset);
+        setStatus('画风已切换为“' + selectedUi.label + '”，下次生图自动使用');
+        showToast('success', '已选择画风：' + selectedUi.label);
     }
 
     function collectSettingsFromUi() {
@@ -1034,12 +1062,7 @@ jQuery(async function () {
 
     function bindSettingsEvents() {
         $('#cpab-style-select').on('change', function () {
-            settings.stylePreset = normalizeStylePreset($(this).val());
-            saveSettings();
-            renderStylePresetSelect();
-            var selectedUi = getStylePresetUi(settings.stylePreset);
-            setStatus('画风已切换为“' + selectedUi.label + '”，下次生图自动使用');
-            showToast('success', '已选择画风：' + selectedUi.label);
+            applyStylePresetSelection($(this).val());
         });
         $('#cpab-check-update').on('click', function () {
             if (updaterState.available) performExtensionUpdate();
@@ -1108,6 +1131,9 @@ jQuery(async function () {
         $(document).off('click.cpabGenerate').on('click.cpabGenerate', '.cpab-mes-button', function (event) { handleGenerateClick(event, 'normal'); });
         $(document).off('click.cpabRandom').on('click.cpabRandom', '.cpab-random-button', function (event) { handleGenerateClick(event, 'random'); });
         $(document).off('click.cpabOptimize').on('click.cpabOptimize', '.cpab-optimize-button', function (event) { handleGenerateClick(event, 'optimize'); });
+        $(document).off('change.cpabInlineStyle').on('change.cpabInlineStyle', '.cpab-inline-style-select', function () {
+            applyStylePresetSelection($(this).val());
+        });
         var eventSource = window.eventSource || (window.SillyTavern && window.SillyTavern.eventSource);
         var eventTypes = window.event_types || (window.SillyTavern && window.SillyTavern.event_types) || {};
         if (eventSource && eventSource.on) {

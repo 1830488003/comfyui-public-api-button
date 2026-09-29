@@ -131,10 +131,33 @@
 
 .cpab-bottom-buttons {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
   gap: 5px;
   padding: 2px 0;
+}
+
+.cpab-inline-style-row {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 3px;
+  font-size: 12px;
+  opacity: 0.96;
+}
+
+.cpab-inline-style-row > span {
+  flex: 0 0 auto;
+  opacity: 0.78;
+}
+
+.cpab-inline-style-select {
+  width: min(320px, calc(100% - 40px));
+  min-height: 34px;
+  font-size: 13px;
 }
 
 .cpab-queue-badge {
@@ -201,6 +224,19 @@
 
   .cpab-style-select {
     min-height: 46px;
+    font-size: 16px;
+  }
+
+  .cpab-inline-style-row {
+    width: 100%;
+    gap: 6px;
+  }
+
+  .cpab-inline-style-select {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    min-height: 42px;
     font-size: 16px;
   }
 }
