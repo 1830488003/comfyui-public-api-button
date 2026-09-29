@@ -6,22 +6,33 @@
     </div>
     <div class="inline-drawer-content">
             <div class="cpab-contact cpab-contact-top">
-                <div class="cpab-section-title">联系方式</div>
+                <div class="cpab-purchase-notice">
+                    <strong>免费额度用完后，请加QQ群联系群主购买卡密</strong>
+                    <div class="cpab-purchase-plans">5元：500次　｜　10元：1200次　｜　20元：包月不限额</div>
+                </div>
+                <div class="cpab-section-title">购买卡密请联系群主</div>
                 <div>默默的角色卡QQ群1：118774271</div>
                 <div>默默的角色卡QQ群2：705941358</div>
+            </div>
+            <div class="cpab-update-panel">
+                <div class="cpab-update-head">
+                    <span>插件版本：<b>v<span id="cpab-current-version">0.0.0</span></b></span>
+                    <button id="cpab-check-update" class="menu_button" type="button"><i class="fa-solid fa-cloud-arrow-down"></i> 检查更新</button>
+                </div>
+                <div id="cpab-update-status" class="cpab-update-status">启动后会自动检查新版本</div>
             </div>
             <div class="cpab-intro">
                 <div class="cpab-section-title">使用说明</div>
                 <div>填写网址和卡密并保存，安装并挂载提供的画图世界书。AI 回复生成“绘画提示词”后，楼层里会出现生图按钮，点击即可画图。</div>
             </div>
-      <p class="cpab-help">插件启动会自动获取最新服务器地址。新用户点击“领取免费50次”后，卡密会自动填写；免费额度用完后，填写购买的卡密继续使用。</p>
+      <p class="cpab-help">插件启动会自动获取最新服务器地址。新用户点击“领取免费50次”后，卡密会自动填写；免费额度用完后，请加上面的QQ群，联系群主购买卡密，再粘贴到“卡密”输入框中。</p>
 
       <label for="cpab-api-url">服务器地址（自动获取）</label>
       <input id="cpab-api-url" class="text_pole" type="url" placeholder="插件启动后自动获取" readonly>
 
       <label for="cpab-api-key">卡密</label>
       <div class="cpab-key-row">
-        <input id="cpab-api-key" class="text_pole" type="password" autocomplete="off" placeholder="领取免费额度后自动填写，或填写购买的卡密">
+        <input id="cpab-api-key" class="text_pole" type="password" autocomplete="off" placeholder="免费50次自动填写；用完请联系群主购买卡密">
         <button id="cpab-toggle-key" class="menu_button" type="button" title="显示或隐藏卡密"><i class="fa-solid fa-eye"></i></button>
       </div>
 

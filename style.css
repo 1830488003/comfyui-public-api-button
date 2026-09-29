@@ -184,3 +184,57 @@
     margin-top: 12px;
     line-height: 1.7;
 }
+
+.cpab-purchase-notice {
+  margin-bottom: 10px;
+  padding: 11px 12px;
+  border: 1px solid rgba(245, 193, 66, 0.8);
+  border-radius: 8px;
+  background: rgba(245, 193, 66, 0.15);
+  color: #ffe28a;
+  line-height: 1.55;
+  box-shadow: inset 3px 0 0 #f5c142;
+}
+
+.cpab-purchase-notice strong {
+  display: block;
+  font-size: 1.02em;
+}
+
+.cpab-purchase-plans {
+  margin-top: 4px;
+  color: var(--SmartThemeBodyColor, #fff);
+  font-size: 0.92em;
+}
+
+.cpab-update-panel {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.cpab-update-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cpab-update-status {
+  margin-top: 7px;
+  color: var(--SmartThemeBodyColor, #bbb);
+  font-size: 0.88em;
+}
+
+.cpab-update-panel.has-update {
+  border-color: rgba(74, 222, 128, 0.75);
+  background: rgba(74, 222, 128, 0.1);
+}
+
+.cpab-update-panel.has-update .cpab-update-status {
+  color: #8fe2a8;
+  font-weight: 700;
+}

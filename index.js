@@ -6,6 +6,8 @@ jQuery(async function () {
     var extensionFolderPath = '/scripts/extensions/third-party/' + extensionName;
     var endpointDiscoveryUrl = 'https://momo-draw-endpoint.1830488003.workers.dev/v1/endpoint';
     var endpointDiscoveryIntervalMs = 30000;
+    var updaterRepoOwner = '1830488003';
+    var updaterRepoName = 'comfyui-public-api-button';
     var storageKey = 'comfyui_public_api_button_settings';
     var allowedResolutions = ['512x768', '512x512', '768x512'];
     var allowedSteps = [4, 6, 8];
@@ -30,6 +32,14 @@ jQuery(async function () {
     var purchaseNoticeShown = false;
     var endpointDiscoveryPromise = null;
     var lastEndpointDiscoveryAt = 0;
+    var updaterState = {
+        currentVersion: '0.0.0',
+        latestVersion: '0.0.0',
+        available: false,
+        checking: false,
+        updating: false,
+        notifiedVersion: ''
+    };
 
     function loadLocalSettings() {
         try {
@@ -60,6 +70,123 @@ jQuery(async function () {
             window.toastr[type](message, '默默画图');
         } else {
             console[type === 'error' ? 'error' : 'log'](message);
+        }
+    }
+
+    function parseManifestVersion(content) {
+        try {
+            return String(JSON.parse(content).version || '0.0.0').trim();
+        } catch (error) {
+            throw new Error('版本文件格式错误');
+        }
+    }
+
+    function compareVersions(left, right) {
+        var leftParts = String(left || '0.0.0').replace(/^v/i, '').split('.').map(Number);
+        var rightParts = String(right || '0.0.0').replace(/^v/i, '').split('.').map(Number);
+        var length = Math.max(leftParts.length, rightParts.length);
+        for (var index = 0; index < length; index++) {
+            var leftValue = Number.isFinite(leftParts[index]) ? leftParts[index] : 0;
+            var rightValue = Number.isFinite(rightParts[index]) ? rightParts[index] : 0;
+            if (leftValue > rightValue) return 1;
+            if (leftValue < rightValue) return -1;
+        }
+        return 0;
+    }
+
+    async function fetchRemoteUpdaterFile(filePath) {
+        var url = 'https://raw.githubusercontent.com/' + updaterRepoOwner + '/' + updaterRepoName + '/main/' + filePath + '?t=' + Date.now();
+        var response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) throw new Error('GitHub 返回 HTTP ' + response.status);
+        return response.text();
+    }
+
+    function renderUpdateState(message) {
+        $('#cpab-current-version').text(updaterState.currentVersion);
+        $('#cpab-update-status').text(message || '');
+        $('#cpab-settings .cpab-update-panel').toggleClass('has-update', updaterState.available);
+        var $button = $('#cpab-check-update');
+        if (updaterState.updating) {
+            $button.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i> 正在更新...');
+        } else if (updaterState.checking) {
+            $button.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i> 检查中...');
+        } else if (updaterState.available) {
+            $button.prop('disabled', false).html('<i class="fa-solid fa-cloud-arrow-down"></i> 立即更新 v' + updaterState.latestVersion);
+        } else {
+            $button.prop('disabled', false).html('<i class="fa-solid fa-cloud-arrow-down"></i> 检查更新');
+        }
+    }
+
+    function showAutomaticUpdateNotice() {
+        if (!updaterState.available || updaterState.notifiedVersion === updaterState.latestVersion) return;
+        updaterState.notifiedVersion = updaterState.latestVersion;
+        var message = '发现新版本 v' + updaterState.latestVersion + '，请打开“默默画图”设置，点击“立即更新”。';
+        if (window.toastr && window.toastr.warning) {
+            window.toastr.warning(message, '默默画图有更新', {
+                closeButton: true,
+                timeOut: 0,
+                extendedTimeOut: 0
+            });
+        } else {
+            window.alert(message);
+        }
+    }
+
+    async function checkForUpdates(isManual) {
+        if (updaterState.checking || updaterState.updating) return;
+        updaterState.checking = true;
+        renderUpdateState('正在检查 GitHub 新版本...');
+        try {
+            var localResponse = await fetch(extensionFolderPath + '/manifest.json?t=' + Date.now(), { cache: 'no-store' });
+            if (!localResponse.ok) throw new Error('本地版本读取失败，HTTP ' + localResponse.status);
+            updaterState.currentVersion = parseManifestVersion(await localResponse.text());
+            updaterState.latestVersion = parseManifestVersion(await fetchRemoteUpdaterFile('manifest.json'));
+            updaterState.available = compareVersions(updaterState.latestVersion, updaterState.currentVersion) > 0;
+            if (updaterState.available) {
+                renderUpdateState('发现新版本 v' + updaterState.latestVersion + '，点击按钮即可更新并自动刷新。');
+                showAutomaticUpdateNotice();
+                if (isManual) showToast('success', '发现新版本 v' + updaterState.latestVersion + '，请点击立即更新');
+            } else {
+                renderUpdateState('当前已是最新版本 v' + updaterState.currentVersion);
+                if (isManual) showToast('success', '当前已是最新版本 v' + updaterState.currentVersion);
+            }
+        } catch (error) {
+            renderUpdateState('检查更新失败，可稍后点击重试：' + (error.message || error));
+            if (isManual) showToast('error', '检查更新失败：' + (error.message || error));
+            else console.warn('[' + extensionName + '] automatic update check failed', error);
+        } finally {
+            updaterState.checking = false;
+            renderUpdateState($('#cpab-update-status').text());
+        }
+    }
+
+    async function performExtensionUpdate() {
+        if (updaterState.updating) return;
+        updaterState.updating = true;
+        renderUpdateState('正在下载并安装新版本，请不要关闭页面...');
+        try {
+            var context = contextGetter();
+            var common = context && context.common ? context.common : context;
+            var extensions = context && context.extensions ? context.extensions : {};
+            var getRequestHeaders = common && common.getRequestHeaders;
+            var extensionTypes = extensions && extensions.extension_types ? extensions.extension_types : (window.extension_types || {});
+            if (typeof getRequestHeaders !== 'function') throw new Error('当前酒馆版本未提供扩展更新接口');
+            var response = await fetch('/api/extensions/update', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({
+                    extensionName: extensionName,
+                    global: extensionTypes[extensionName] === 'global'
+                })
+            });
+            if (!response.ok) throw new Error((await response.text()) || ('HTTP ' + response.status));
+            renderUpdateState('更新成功，即将自动刷新页面...');
+            showToast('success', '默默画图更新成功，页面即将刷新');
+            setTimeout(function () { window.location.reload(); }, 2200);
+        } catch (error) {
+            updaterState.updating = false;
+            renderUpdateState('更新失败：' + (error.message || error));
+            showToast('error', '更新失败：' + (error.message || error));
         }
     }
 
@@ -230,7 +357,7 @@ jQuery(async function () {
         await refreshDiscoveredApiUrl(false, true);
         var apiUrl = requireApiUrl();
         var apiKey = String(settings.apiKey || '').trim();
-        if (!apiKey) throw new Error('请先点击“领取免费50次”，或填写购买的卡密');
+        if (!apiKey) throw new Error('请先点击“领取免费50次”；免费额度用完后，请加QQ群联系群主购买卡密');
         return { apiUrl: apiUrl, apiKey: apiKey };
     }
 
@@ -642,13 +769,17 @@ jQuery(async function () {
     }
 
     function bindSettingsEvents() {
+        $('#cpab-check-update').on('click', function () {
+            if (updaterState.available) performExtensionUpdate();
+            else checkForUpdates(true);
+        });
         $('#cpab-save').on('click', async function () {
             collectSettingsFromUi();
             saveSettings();
             refreshButtons();
             try {
                 if (settings.apiKey) await Promise.all([refreshQuota(true), refreshQueueStatus(true)]);
-                setStatus(settings.apiKey ? '设置已保存' : '设置已保存，请点击领取免费50次或填写购买的卡密');
+                setStatus(settings.apiKey ? '设置已保存' : '设置已保存，请点击领取免费50次；用完后加QQ群联系群主购买卡密');
                 showToast('success', '默默画图设置已保存');
             } catch (error) {
                 setStatus('保存后连接失败：' + (error.message || error));
@@ -724,6 +855,7 @@ jQuery(async function () {
         bindSettingsEvents();
         bindGlobalEvents();
         refreshButtons();
+        setTimeout(function () { checkForUpdates(false); }, 1800);
         try {
             await refreshDiscoveredApiUrl(true, false);
         } catch (error) {
@@ -736,7 +868,7 @@ jQuery(async function () {
                 setStatus('卡密连接失败：' + (error.message || error));
             }
         } else {
-            setStatus('请点击领取免费50次，或填写购买的卡密');
+            setStatus('请点击领取免费50次；免费额度用完后，请加QQ群联系群主购买卡密');
         }
         console.log('[' + extensionName + '] loaded');
     } catch (error) {
