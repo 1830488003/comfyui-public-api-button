@@ -15,7 +15,7 @@ jQuery(async function () {
         apiUrl: 'https://magic-arthritis-maintain-altered.trycloudflare.com',
         apiKey: '',
         installId: '',
-        resolution: '512x768',
+        resolution: '768x512',
         steps: 4
     };
     var contextGetter = function () {
