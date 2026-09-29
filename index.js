@@ -13,24 +13,24 @@ jQuery(async function () {
     var allowedResolutions = ['512x768', '512x512', '768x512'];
     var allowedSteps = [4, 6, 8];
     var stylePresets = [
-        { id: 'genshin-open-world', name: '原神感三维游戏', label: '原神感三维游戏', description: '明确三维卡通游戏建模、赛璐璐渲染和元素特效，不是二维厚涂。', promptTitle: '原神感三维卡通游戏渲染', prefix: '明确的三维游戏角色建模画面，日式二次元脸型与大眼睛，卡通比例人物，赛璐璐式三维着色，平滑的三维皮肤与发丝模型，精细服装网格和金属布料材质，原神感开放世界游戏过场动画', suffix: '三维实时游戏引擎渲染，柔和体积光，明亮高饱和幻想配色，元素粒子特效，清晰三维空间和景深，角色与背景都保持三维建模质感，不画成二维手绘或真人摄影', prefixWeight: 1.55, suffixWeight: 1.40 },
-        { id: 'arknights-tactical', name: '明日方舟感战术插画', label: '明日方舟感战术插画', description: '二维战术角色宣传画，机能服、工业都市和克制冷色调。', promptTitle: '明日方舟感二维战术角色宣传插画', prefix: '明确的二维高精度商业角色插画，冷峻末世都市，战术机能服与工业装备，修长动漫人物比例，克制表情，复杂服装分层和机械细节', suffix: '低饱和灰黑色调配合红黄点缀，锐利轮廓光，平面海报设计与文字留白感，细腻数字绘画笔触，高级二游角色宣传图质感', prefixWeight: 1.50, suffixWeight: 1.36 },
-        { id: 'gacha-character-splash', name: '热门二游角色立绘', label: '热门二游角色立绘', description: '明确二维商业游戏立绘，强调全身角色、服装细节和技能特效。', promptTitle: '高级二维二游角色立绘', prefix: '明确的二维数字角色插画，精致动漫脸型与发丝，完整全身英雄姿态，华丽服装和大量配饰，角色周围展开技能与元素特效', suffix: '赛璐璐上色与细腻厚涂融合，清晰轮廓，动感斜线构图，角色居中突出，商业手游抽卡立绘和角色宣传页质感', prefixWeight: 1.48, suffixWeight: 1.34 },
-        { id: 'donghua-3d-character', name: '国漫三维角色', label: '国漫三维角色', description: '国漫电影级三维建模，半写实人物、发丝材质和仙侠场景。', promptTitle: '国漫电影级三维角色渲染', prefix: '明确的三维国漫角色建模，东方审美五官，半写实动漫比例，细密三维发丝，真实丝绸服装与玉石金属饰品，仙侠角色设计', suffix: '电影级三维动画渲染，皮肤次表面散射，真实布料和毛发材质，云雾体积光，宏大国风场景，保持清晰三维空间与模型质感', prefixWeight: 1.50, suffixWeight: 1.36 },
-        { id: 'kpop-idol-concept', name: '韩国女团概念照', label: '韩国女团概念照', description: '真人女团回归概念照，强调妆造、棚拍灯光和商业海报质感。', promptTitle: '韩国女团真人回归概念摄影', prefix: '明确的真人时尚摄影，韩国女团成员般的年轻女性，精致舞台妆容，统一但各有区别的高定表演服装，自信镜头表现力', suffix: '专业摄影棚布光，亮泽皮肤与真实毛孔，商业杂志精修，回归预告海报构图，潮流背景装置和高级流行音乐视觉', prefixWeight: 1.45, suffixWeight: 1.32 },
-        { id: 'korean-clean-girl', name: '韩系清冷女友感', label: '韩系清冷女友感', description: '真人韩系生活人像，淡妆、低饱和穿搭和柔和窗边光。', promptTitle: '韩系清冷真人生活人像摄影', prefix: '明确的真人生活方式人像摄影，清冷自然的年轻女性，淡颜干净妆容，柔顺发型，米白灰低饱和服装，松弛安静的日常姿态', suffix: '柔和窗边漫射光，真实自然皮肤纹理，浅景深，克制奶油色调，韩国生活杂志与女友感照片构图', prefixWeight: 1.43, suffixWeight: 1.30 },
-        { id: 'douyin-fashion', name: '抖音爆款穿搭', label: '抖音爆款穿搭', description: '真人短视频穿搭封面，突出身材比例、手机构图和鲜明调色。', promptTitle: '抖音爆款真人穿搭短视频封面摄影', prefix: '明确的真人手机人像摄影，热门中文短视频穿搭博主，突出身材比例的时髦服装，自信自然动作，都市街道或商场场景', suffix: '竖屏短视频封面构图，显脸小的近广角视角，明亮补光，干净锐利画面，鲜明但不过度的调色，熟悉的抖音爆款穿搭观感', prefixWeight: 1.45, suffixWeight: 1.32 },
-        { id: 'y2k-streetwear', name: '千禧辣妹街拍', label: '千禧辣妹街拍', description: '真人千禧辣妹街拍，直闪、低腰穿搭和夜间霓虹街景。', promptTitle: '千禧年辣妹真人街头时尚摄影', prefix: '明确的真人时尚街拍，千禧年辣妹造型，修身短上衣与低腰下装，金属首饰和亮面材质，自信俏皮姿态，夜间商业街背景', suffix: '相机直打闪光灯，轻微广角透视，霓虹招牌与车灯，亮泽杂志调色，世纪初流行文化和韩国街拍氛围', prefixWeight: 1.45, suffixWeight: 1.32 },
-        { id: 'dopamine-fashion', name: '多巴胺穿搭', label: '多巴胺穿搭', description: '真人高饱和时尚广告，强调撞色服装和快乐活力。', promptTitle: '多巴胺真人商业时尚摄影', prefix: '明确的真人商业时尚摄影，高饱和撞色服装，多层次彩色配饰，快乐有活力的姿态，明亮简洁背景', suffix: '阳光充足，清晰商业广告构图，鲜艳但肤色自然的调色，服装颜色块层次分明，年轻社交媒体潮流感', prefixWeight: 1.43, suffixWeight: 1.30 },
-        { id: 'old-money-glamour', name: '千金老钱风', label: '千金老钱风', description: '真人低调奢华杂志大片，经典剪裁、庄园环境和奶油色调。', promptTitle: '千金老钱风真人奢华杂志摄影', prefix: '明确的真人高级时尚摄影，低调奢华的年轻女性，剪裁合体的经典服装，珍珠与皮革配饰，庄园酒店或高级会所环境', suffix: '柔和自然侧光，奶油棕色调，真实高级面料纹理，端庄克制姿态，国际奢侈品杂志大片构图', prefixWeight: 1.43, suffixWeight: 1.30 },
-        { id: 'guochao-streetwear', name: '国潮街头', label: '国潮街头', description: '真人国潮广告，传统纹样结合街头廓形和中国城市背景。', promptTitle: '现代国潮真人街头广告摄影', prefix: '明确的真人潮流广告摄影，现代街头服装融合传统中式纹样与盘扣结构，宽松层叠廓形，年轻人物自信姿态，中国城市街区背景', suffix: '红黑金与水墨色点缀，硬朗商业灯光，低机位广角构图，清晰布料印花与鞋服细节，国产潮牌宣传大片质感', prefixWeight: 1.47, suffixWeight: 1.33 },
-        { id: 'new-chinese-chic', name: '新中式穿搭', label: '新中式穿搭', description: '真人新中式时尚摄影，现代剪裁结合立领盘扣和东方面料。', promptTitle: '新中式真人时尚杂志摄影', prefix: '明确的真人时尚摄影，当代日常服装融入立领盘扣斜襟和东方提花面料，现代简洁剪裁，优雅自然姿态，中式现代建筑环境', suffix: '雅致米白墨黑黛青配色，柔和电影光线，真实丝绸与棉麻纹理，留白构图，高级中文时尚杂志质感', prefixWeight: 1.47, suffixWeight: 1.33 },
-        { id: 'hanfu-cinematic', name: '汉服仙侠大片', label: '汉服仙侠大片', description: '真人古装影视剧照，真实演员、汉服材质和仙侠电影场景。', promptTitle: '真人汉服仙侠电影剧照', prefix: '明确的真人古装影视摄影，穿精致汉服的仙侠角色，真实演员五官与皮肤，复杂发髻和金玉发饰，飘动宽袖与多层衣摆，宏大中式幻想场景', suffix: '电影级布景与灯光，云雾体积光，真实丝绸刺绣纹理，武侠电影镜头构图，山川宫殿背景，真人影视海报质感', prefixWeight: 1.47, suffixWeight: 1.35 },
-        { id: 'xiaohongshu-lifestyle', name: '小红书氛围感', label: '小红书氛围感', description: '真人精致生活照片，咖啡旅行场景、窗边光和笔记封面构图。', promptTitle: '小红书真人生活方式摄影', prefix: '明确的真人生活方式摄影，时髦年轻人物，精致咖啡店民宿或旅行地点，看似随意但好看的自然动作，丰富桌面和环境小物', suffix: '柔和窗边光，温暖通透调色，真实皮肤与食物材质，轻微浅景深，精心设计的日常感，小红书热门笔记封面构图', prefixWeight: 1.43, suffixWeight: 1.30 },
-        { id: 'phone-flash-candid', name: '手机闪光灯随拍', label: '手机闪光灯随拍', description: '真人手机直闪抓拍，轻微过曝、随手构图和夜生活氛围。', promptTitle: '真人手机直闪随拍摄影', prefix: '明确的真人手机快照，朋友视角的自然抓拍，人物动作松弛不摆拍，夜间餐厅街道卧室或聚会场景，正面手机闪光灯', suffix: '真实皮肤纹理，轻微过曝和运动模糊，不完全水平的随手取景，近距离广角感，朋友圈夜生活照片氛围', prefixWeight: 1.43, suffixWeight: 1.30 },
-        { id: 'korean-webtoon', name: '韩漫恋爱感', label: '韩漫恋爱感', description: '明确二维韩漫，修长人物、精致线稿和浪漫互动构图。', promptTitle: '二维韩漫恋爱条漫插画', prefix: '明确的二维韩漫数字插画，修长漂亮的人物比例，精致脸型和五官，时髦现代服装，男女角色之间有明显浪漫互动与视线关系', suffix: '干净细线稿，柔和渐变上色，光滑发丝高光，背景适度简化，电影分镜式构图，高级恋爱条漫封面质感', prefixWeight: 1.48, suffixWeight: 1.34 },
-        { id: 'cosplay-realism', name: '高还原角色扮演写真', label: '高还原角色扮演写真', description: '真人高还原角色扮演写真，准确服装道具和电影级实景灯光。', promptTitle: '高还原游戏角色真人扮演摄影', prefix: '明确的真人角色扮演摄影，真人演员高度还原幻想游戏角色，准确的假发妆容服装武器和配饰，符合角色性格的姿态与表情', suffix: '真实布料皮革金属材质，电影感实景灯光，专业棚拍或外景构图，角色宣传海报级精修，同时保留真人皮肤质感', prefixWeight: 1.45, suffixWeight: 1.32 },
-        { id: 'blindbox-3d', name: '潮玩盲盒三维', label: '潮玩盲盒三维', description: '明确三维潮玩商品渲染，大头小身体、搪胶材质和影棚陈列。', promptTitle: '潮玩盲盒三维商品渲染', prefix: '明确的三维潮玩商品建模，圆润迷你人物比例，大头小身体，简化可爱五官，精致微型服装和配件，收藏级设计师玩具造型', suffix: '光滑搪胶与树脂材质，干净影棚三点布光，柔和接触阴影，彩色商品陈列台，商业盲盒包装宣传图和清晰三维渲染质感', prefixWeight: 1.48, suffixWeight: 1.34 },
+        { id: 'kpop-idol-concept', name: '韩国女团概念照', label: '韩国女团概念照', description: '真人女团回归概念照，强调妆造、棚拍灯光和商业海报质感。', promptTitle: '韩国女团真人回归概念摄影', prefix: '明确的真人时尚摄影，韩国女团成员般的年轻女性，精致舞台妆容，统一但各有区别的高定表演服装，自信镜头表现力', suffix: '专业摄影棚布光，亮泽皮肤与真实毛孔，商业杂志精修，回归预告海报构图，潮流背景装置和高级流行音乐视觉' },
+        { id: 'douyin-fashion', name: '抖音爆款穿搭', label: '抖音爆款穿搭', description: '真人短视频穿搭封面，突出身材比例、手机构图和鲜明调色。', promptTitle: '抖音爆款真人穿搭短视频封面摄影', prefix: '明确的真人手机人像摄影，热门中文短视频穿搭博主，突出身材比例的时髦服装，自信自然动作，都市街道或商场场景', suffix: '竖屏短视频封面构图，显脸小的近广角视角，明亮补光，干净锐利画面，鲜明但不过度的调色，熟悉的抖音爆款穿搭观感' },
+        { id: 'korean-clean-girl', name: '韩系清冷女友感', label: '韩系清冷女友感', description: '真人韩系生活人像，淡妆、低饱和穿搭和柔和窗边光。', promptTitle: '韩系清冷真人生活人像摄影', prefix: '明确的真人生活方式人像摄影，清冷自然的年轻女性，淡颜干净妆容，柔顺发型，米白灰低饱和服装，松弛安静的日常姿态', suffix: '柔和窗边漫射光，真实自然皮肤纹理，浅景深，克制奶油色调，韩国生活杂志与女友感照片构图' },
+        { id: 'xiaohongshu-lifestyle', name: '小红书氛围感', label: '小红书氛围感', description: '真人精致生活照片，咖啡旅行场景、窗边光和笔记封面构图。', promptTitle: '小红书真人生活方式摄影', prefix: '明确的真人生活方式摄影，时髦年轻人物，精致咖啡店民宿或旅行地点，看似随意但好看的自然动作，丰富桌面和环境小物', suffix: '柔和窗边光，温暖通透调色，真实皮肤与食物材质，轻微浅景深，精心设计的日常感，小红书热门笔记封面构图' },
+        { id: 'y2k-streetwear', name: '千禧辣妹街拍', label: '千禧辣妹街拍', description: '真人千禧辣妹街拍，直闪、低腰穿搭和夜间霓虹街景。', promptTitle: '千禧年辣妹真人街头时尚摄影', prefix: '明确的真人时尚街拍，千禧年辣妹造型，修身短上衣与低腰下装，金属首饰和亮面材质，自信俏皮姿态，夜间商业街背景', suffix: '相机直打闪光灯，轻微广角透视，霓虹招牌与车灯，亮泽杂志调色，世纪初流行文化和韩国街拍氛围' },
+        { id: 'new-chinese-chic', name: '新中式穿搭', label: '新中式穿搭', description: '真人新中式时尚摄影，现代剪裁结合立领盘扣和东方面料。', promptTitle: '新中式真人时尚杂志摄影', prefix: '明确的真人时尚摄影，当代日常服装融入立领盘扣斜襟和东方提花面料，现代简洁剪裁，优雅自然姿态，中式现代建筑环境', suffix: '雅致米白墨黑黛青配色，柔和电影光线，真实丝绸与棉麻纹理，留白构图，高级中文时尚杂志质感' },
+        { id: 'guochao-streetwear', name: '国潮街头', label: '国潮街头', description: '真人国潮广告，传统纹样结合街头廓形和中国城市背景。', promptTitle: '现代国潮真人街头广告摄影', prefix: '明确的真人潮流广告摄影，现代街头服装融合传统中式纹样与盘扣结构，宽松层叠廓形，年轻人物自信姿态，中国城市街区背景', suffix: '红黑金与水墨色点缀，硬朗商业灯光，低机位广角构图，清晰布料印花与鞋服细节，国产潮牌宣传大片质感' },
+        { id: 'hanfu-cinematic', name: '汉服仙侠大片', label: '汉服仙侠大片', description: '真人古装影视剧照，真实演员、汉服材质和仙侠电影场景。', promptTitle: '真人汉服仙侠电影剧照', prefix: '明确的真人古装影视摄影，穿精致汉服的仙侠角色，真实演员五官与皮肤，复杂发髻和金玉发饰，飘动宽袖与多层衣摆，宏大中式幻想场景', suffix: '电影级布景与灯光，云雾体积光，真实丝绸刺绣纹理，武侠电影镜头构图，山川宫殿背景，真人影视海报质感' },
+        { id: 'old-money-glamour', name: '千金老钱风', label: '千金老钱风', description: '真人低调奢华杂志大片，经典剪裁、庄园环境和奶油色调。', promptTitle: '千金老钱风真人奢华杂志摄影', prefix: '明确的真人高级时尚摄影，低调奢华的年轻女性，剪裁合体的经典服装，珍珠与皮革配饰，庄园酒店或高级会所环境', suffix: '柔和自然侧光，奶油棕色调，真实高级面料纹理，端庄克制姿态，国际奢侈品杂志大片构图' },
+        { id: 'dopamine-fashion', name: '多巴胺穿搭', label: '多巴胺穿搭', description: '真人高饱和时尚广告，强调撞色服装和快乐活力。', promptTitle: '多巴胺真人商业时尚摄影', prefix: '明确的真人商业时尚摄影，高饱和撞色服装，多层次彩色配饰，快乐有活力的姿态，明亮简洁背景', suffix: '阳光充足，清晰商业广告构图，鲜艳但肤色自然的调色，服装颜色块层次分明，年轻社交媒体潮流感' },
+        { id: 'phone-flash-candid', name: '手机闪光灯随拍', label: '手机闪光灯随拍', description: '真人手机直闪抓拍，轻微过曝、随手构图和夜生活氛围。', promptTitle: '真人手机直闪随拍摄影', prefix: '明确的真人手机快照，朋友视角的自然抓拍，人物动作松弛不摆拍，夜间餐厅街道卧室或聚会场景，正面手机闪光灯', suffix: '真实皮肤纹理，轻微过曝和运动模糊，不完全水平的随手取景，近距离广角感，朋友圈夜生活照片氛围' },
+        { id: 'cosplay-realism', name: '高还原角色扮演写真', label: '高还原角色扮演写真', description: '真人高还原角色扮演写真，准确服装道具和电影级实景灯光。', promptTitle: '高还原游戏角色真人扮演摄影', prefix: '明确的真人角色扮演摄影，真人演员高度还原幻想游戏角色，准确的假发妆容服装武器和配饰，符合角色性格的姿态与表情', suffix: '真实布料皮革金属材质，电影感实景灯光，专业棚拍或外景构图，角色宣传海报级精修，同时保留真人皮肤质感' },
+        { id: 'blindbox-3d', name: '潮玩盲盒三维', label: '潮玩盲盒三维', description: '明确三维潮玩商品渲染，大头小身体、搪胶材质和影棚陈列。', promptTitle: '潮玩盲盒三维商品渲染', prefix: '明确的三维潮玩商品建模，圆润迷你人物比例，大头小身体，简化可爱五官，精致微型服装和配件，收藏级设计师玩具造型', suffix: '光滑搪胶与树脂材质，干净影棚三点布光，柔和接触阴影，彩色商品陈列台，商业盲盒包装宣传图和清晰三维渲染质感' },
+        { id: 'genshin-open-world', name: '原神感三维游戏', label: '原神感三维游戏', description: '明确三维卡通游戏建模、赛璐璐渲染和元素特效，不是二维厚涂。', promptTitle: '原神感三维卡通游戏渲染', prefix: '明确的三维游戏角色建模画面，日式二次元脸型与大眼睛，卡通比例人物，赛璐璐式三维着色，平滑的三维皮肤与发丝模型，精细服装网格和金属布料材质，原神感开放世界游戏过场动画', suffix: '三维实时游戏引擎渲染，柔和体积光，明亮高饱和幻想配色，元素粒子特效，清晰三维空间和景深，人物、服装、道具与环境统一保持三维游戏建模和卡通着色' },
+        { id: 'arknights-tactical', name: '明日方舟感战术插画', label: '明日方舟感战术插画', description: '二维战术角色宣传画，机能服、工业都市和克制冷色调。', promptTitle: '明日方舟感二维战术角色宣传插画', prefix: '明确的二维高精度商业角色插画，冷峻末世都市，战术机能服与工业装备，修长动漫人物比例，克制表情，复杂服装分层和机械细节', suffix: '低饱和灰黑色调配合红黄点缀，锐利轮廓光，平面海报设计与文字留白感，细腻数字绘画笔触，高级二游角色宣传图质感' },
+        { id: 'gacha-character-splash', name: '热门二游角色立绘', label: '热门二游角色立绘', description: '明确二维商业游戏立绘，强调全身角色、服装细节和技能特效。', promptTitle: '高级二维二游角色立绘', prefix: '明确的二维数字角色插画，精致动漫脸型与发丝，完整全身英雄姿态，华丽服装和大量配饰，角色周围展开技能与元素特效', suffix: '赛璐璐上色与细腻厚涂融合，清晰轮廓，动感斜线构图，角色居中突出，商业手游抽卡立绘和角色宣传页质感' },
+        { id: 'donghua-3d-character', name: '国漫三维角色', label: '国漫三维角色', description: '国漫电影级三维建模，半写实人物、发丝材质和仙侠场景。', promptTitle: '国漫电影级三维角色渲染', prefix: '明确的三维国漫角色建模，东方审美五官，半写实动漫比例，细密三维发丝，真实丝绸服装与玉石金属饰品，仙侠角色设计', suffix: '电影级三维动画渲染，皮肤次表面散射，真实布料和毛发材质，云雾体积光，宏大国风场景，保持清晰三维空间与模型质感' },
+        { id: 'korean-webtoon', name: '韩漫恋爱感', label: '韩漫恋爱感', description: '明确二维韩漫，修长人物、精致线稿和浪漫互动构图。', promptTitle: '二维韩漫恋爱条漫插画', prefix: '明确的二维韩漫数字插画，修长漂亮的人物比例，精致脸型和五官，时髦现代服装，男女角色之间有明显浪漫互动与视线关系', suffix: '干净细线稿，柔和渐变上色，光滑发丝高光，背景适度简化，电影分镜式构图，高级恋爱条漫封面质感' },
         { id: 'cinematic-photo', name: 'Cinematic Photo', promptTitle: '电影感摄影风格', prefix: '电影感照片，自然光照', suffix: '高反差，专业摄影质感，清晰对焦，浅景深' },
         { id: 'medium-format', name: 'Medium Format', promptTitle: '中画幅胶片风格', prefix: '中画幅胶片照片，电影剧照氛围', suffix: '电影轮廓光，柔和胶片颗粒，柯达波特拉色调' },
         { id: 'analog-film', name: 'Analog Film', promptTitle: '复古模拟胶片风格', prefix: '模拟胶片照片，颗粒纹理，暖色偏移，轻微暗角', suffix: '复古胶片质感，细腻颗粒，褪色高光，柔和阴影' },
@@ -45,7 +45,7 @@ jQuery(async function () {
         { id: 'epic-concept-art', name: 'Epic Concept Art', promptTitle: '史诗概念艺术风格', prefix: '电影级大型游戏概念艺术，辽阔景观，细致建筑结构', suffix: '英雄式构图，大气纵深，极度精致的商业渲染' },
         { id: 'ethereal-fantasy', name: 'Ethereal Fantasy', promptTitle: '空灵幻想风格', prefix: '空灵幻想概念艺术', suffix: '宏伟，圣洁，绘画感，史诗，庄严，梦幻封面艺术' },
         { id: 'dark-fantasy-painterly', name: 'Dark Fantasy Painterly', promptTitle: '暗黑幻想绘画风格', prefix: '暗黑高级幻想数字绘画，压抑深沉氛围', suffix: '戏剧性阴影，神秘光线，细腻丰富的环境绘制' },
-        { id: 'ghibli-inspired', name: 'Ghibli-Inspired', promptTitle: '吉卜力动画风格', prefix: '吉卜力感手绘二维动画，温柔奇幻的日式动画电影美学，简洁生动的动漫人物设计', suffix: '赛璐璐手绘背景，干净动漫五官，柔和绘画光线，温暖配色，繁茂环境细节，明确的非写实插画', prefixWeight: 1.45, suffixWeight: 1.35 },
+        { id: 'ghibli-inspired', name: 'Ghibli-Inspired', promptTitle: '吉卜力动画风格', prefix: '吉卜力感手绘二维动画，温柔奇幻的日式动画电影美学，简洁生动的动漫人物设计', suffix: '赛璐璐手绘背景，干净动漫五官，柔和绘画光线，温暖配色，繁茂环境细节，明确的非写实插画' },
         { id: 'dark-moebius', name: 'Dark Moebius', promptTitle: '暗黑莫比乌斯幻想风格', prefix: '图像化超现实幻想，锐利线条，梦境般建筑', suffix: '有限色板，棱角构图，诡异紧张的空气感' },
         { id: 'comic-book', name: 'Comic Book', promptTitle: '美式漫画风格', prefix: '西方漫画风格，强烈墨线轮廓，大胆平面图形', suffix: '网点阴影，鲜明纯色，动感英雄式构图' },
         { id: 'manga', name: 'Manga', promptTitle: '黑白漫画风格', prefix: '黑白漫画插画，强烈勾线，分镜式反差', suffix: '网点纸阴影，风格化表情，动感速度线' },
@@ -58,24 +58,24 @@ jQuery(async function () {
         { id: 'tilt-shift', name: 'Tilt Shift', promptTitle: '移轴微缩摄影风格', prefix: '移轴摄影，选择性对焦，微缩模型效果', suffix: '背景虚化，鲜艳饱和度，玩具场景观感' }
     ];
     var stylePresetUi = {
-        'genshin-open-world': { label: '原神感三维游戏', group: '🔥 热门潮流', description: '明确三维卡通游戏建模、赛璐璐渲染和元素特效，不是二维厚涂。' },
-        'arknights-tactical': { label: '明日方舟感战术插画', group: '🔥 热门潮流', description: '二维战术角色宣传画，机能服、工业都市和克制冷色调。' },
-        'gacha-character-splash': { label: '热门二游角色立绘', group: '🔥 热门潮流', description: '明确二维商业游戏立绘，强调全身角色、服装细节和技能特效。' },
-        'donghua-3d-character': { label: '国漫三维角色', group: '🔥 热门潮流', description: '国漫电影级三维建模，半写实人物、发丝材质和仙侠场景。' },
-        'kpop-idol-concept': { label: '韩国女团概念照', group: '🔥 热门潮流', description: '真人女团回归概念照，强调妆造、棚拍灯光和商业海报质感。' },
-        'korean-clean-girl': { label: '韩系清冷女友感', group: '🔥 热门潮流', description: '真人韩系生活人像，淡妆、低饱和穿搭和柔和窗边光。' },
-        'douyin-fashion': { label: '抖音爆款穿搭', group: '🔥 热门潮流', description: '真人短视频穿搭封面，突出身材比例、手机构图和鲜明调色。' },
-        'y2k-streetwear': { label: '千禧辣妹街拍', group: '🔥 热门潮流', description: '真人千禧辣妹街拍，直闪、低腰穿搭和夜间霓虹街景。' },
-        'dopamine-fashion': { label: '多巴胺穿搭', group: '🔥 热门潮流', description: '真人高饱和时尚广告，强调撞色服装和快乐活力。' },
-        'old-money-glamour': { label: '千金老钱风', group: '🔥 热门潮流', description: '真人低调奢华杂志大片，经典剪裁、庄园环境和奶油色调。' },
-        'guochao-streetwear': { label: '国潮街头', group: '🔥 热门潮流', description: '真人国潮广告，传统纹样结合街头廓形和中国城市背景。' },
-        'new-chinese-chic': { label: '新中式穿搭', group: '🔥 热门潮流', description: '真人新中式时尚摄影，现代剪裁结合立领盘扣和东方面料。' },
-        'hanfu-cinematic': { label: '汉服仙侠大片', group: '🔥 热门潮流', description: '真人古装影视剧照，真实演员、汉服材质和仙侠电影场景。' },
-        'xiaohongshu-lifestyle': { label: '小红书氛围感', group: '🔥 热门潮流', description: '真人精致生活照片，咖啡旅行场景、窗边光和笔记封面构图。' },
-        'phone-flash-candid': { label: '手机闪光灯随拍', group: '🔥 热门潮流', description: '真人手机直闪抓拍，轻微过曝、随手构图和夜生活氛围。' },
-        'korean-webtoon': { label: '韩漫恋爱感', group: '🔥 热门潮流', description: '明确二维韩漫，修长人物、精致线稿和浪漫互动构图。' },
-        'cosplay-realism': { label: '高还原角色扮演写真', group: '🔥 热门潮流', description: '真人高还原角色扮演写真，准确服装道具和电影级实景灯光。' },
-        'blindbox-3d': { label: '潮玩盲盒三维', group: '🔥 热门潮流', description: '明确三维潮玩商品渲染，大头小身体、搪胶材质和影棚陈列。' },
+        'genshin-open-world': { label: '原神感三维游戏', group: '⚠️ 二次元实验（建议风格适配器）', description: '实验项：Turbo仅靠文字可能仍偏写实；想稳定得到原神感三维游戏画面，建议搭配二次元三维游戏风格适配器。' },
+        'arknights-tactical': { label: '明日方舟感战术插画', group: '⚠️ 二次元实验（建议风格适配器）', description: '实验项：Turbo的写实倾向较强；建议搭配二维战术插画风格适配器。' },
+        'gacha-character-splash': { label: '热门二游角色立绘', group: '⚠️ 二次元实验（建议风格适配器）', description: '实验项：Turbo仅靠提示词生成二维二游立绘不稳定；建议搭配动漫角色立绘适配器。' },
+        'donghua-3d-character': { label: '国漫三维角色', group: '⚠️ 二次元实验（建议风格适配器）', description: '实验项：国漫三维角色需要专门的三维国漫模型或风格适配器才能稳定。' },
+        'kpop-idol-concept': { label: '韩国女团概念照', group: '🔥 热门写真与设计', description: '真人女团回归概念照，强调妆造、棚拍灯光和商业海报质感。' },
+        'korean-clean-girl': { label: '韩系清冷女友感', group: '🔥 热门写真与设计', description: '真人韩系生活人像，淡妆、低饱和穿搭和柔和窗边光。' },
+        'douyin-fashion': { label: '抖音爆款穿搭', group: '🔥 热门写真与设计', description: '真人短视频穿搭封面，突出身材比例、手机构图和鲜明调色。' },
+        'y2k-streetwear': { label: '千禧辣妹街拍', group: '🔥 热门写真与设计', description: '真人千禧辣妹街拍，直闪、低腰穿搭和夜间霓虹街景。' },
+        'dopamine-fashion': { label: '多巴胺穿搭', group: '🔥 热门写真与设计', description: '真人高饱和时尚广告，强调撞色服装和快乐活力。' },
+        'old-money-glamour': { label: '千金老钱风', group: '🔥 热门写真与设计', description: '真人低调奢华杂志大片，经典剪裁、庄园环境和奶油色调。' },
+        'guochao-streetwear': { label: '国潮街头', group: '🔥 热门写真与设计', description: '真人国潮广告，传统纹样结合街头廓形和中国城市背景。' },
+        'new-chinese-chic': { label: '新中式穿搭', group: '🔥 热门写真与设计', description: '真人新中式时尚摄影，现代剪裁结合立领盘扣和东方面料。' },
+        'hanfu-cinematic': { label: '汉服仙侠大片', group: '🔥 热门写真与设计', description: '真人古装影视剧照，真实演员、汉服材质和仙侠电影场景。' },
+        'xiaohongshu-lifestyle': { label: '小红书氛围感', group: '🔥 热门写真与设计', description: '真人精致生活照片，咖啡旅行场景、窗边光和笔记封面构图。' },
+        'phone-flash-candid': { label: '手机闪光灯随拍', group: '🔥 热门写真与设计', description: '真人手机直闪抓拍，轻微过曝、随手构图和夜生活氛围。' },
+        'korean-webtoon': { label: '韩漫恋爱感', group: '⚠️ 二次元实验（建议风格适配器）', description: '实验项：Turbo可能把韩漫人物转成真人；建议搭配韩漫或二维插画风格适配器。' },
+        'cosplay-realism': { label: '高还原角色扮演写真', group: '🔥 热门写真与设计', description: '真人高还原角色扮演写真，准确服装道具和电影级实景灯光。' },
+        'blindbox-3d': { label: '潮玩盲盒三维', group: '🔥 热门写真与设计', description: '明确三维潮玩商品渲染，大头小身体、搪胶材质和影棚陈列。' },
         'cinematic-photo': { label: '电影感摄影', group: '摄影写实', description: '自然光、强对比、专业摄影质感和浅景深。' },
         'medium-format': { label: '中画幅胶片', group: '摄影写实', description: '电影剧照般的中画幅胶片质感，柔和颗粒和柯达色调。' },
         'analog-film': { label: '复古模拟胶片', group: '摄影写实', description: '温暖偏色、轻微暗角、褪色高光和复古胶片颗粒。' },
@@ -175,15 +175,15 @@ jQuery(async function () {
 
     function buildStyledPrompt(scenePrompt, presetId) {
         var preset = getStylePreset(presetId);
-        var prefixWeight = Number(preset.prefixWeight) || 1.35;
-        var suffixWeight = Number(preset.suffixWeight) || 1.25;
         var presetUi = stylePresetUi[preset.id] || {};
         var promptTitle = String(preset.promptTitle || presetUi.label || preset.name).trim();
-        var weightedPrefix = '(' + promptTitle + ', ' + preset.prefix + ':' + prefixWeight.toFixed(2) + ')';
-        var weightedSuffix = '(' + preset.suffix + ':' + suffixWeight.toFixed(2) + ')';
-        return [weightedPrefix, String(scenePrompt || '').trim(), weightedSuffix]
-            .filter(Boolean)
-            .join(', ');
+        var sceneText = String(scenePrompt || '').trim();
+        return [
+            promptTitle + '。',
+            String(preset.prefix || '').trim() + '。',
+            '画面主体与场景内容：' + sceneText + '。',
+            String(preset.suffix || '').trim() + '。'
+        ].filter(Boolean).join('');
     }
 
     var settings = Object.assign({}, defaultSettings, loadLocalSettings(), extensionSettingsRoot[extensionName]);
