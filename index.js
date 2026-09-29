@@ -39,6 +39,33 @@ jQuery(async function () {
         { id: 'art-deco', name: 'Art Deco', prefix: 'art deco style, geometric shapes, bold symmetry', suffix: 'luxurious gold accents, ornate decorative detail' },
         { id: 'tilt-shift', name: 'Tilt Shift', prefix: 'tilt-shift photograph, selective focus, miniature effect', suffix: 'blurred background, vibrant saturation, toy-diorama feel' }
     ];
+    var stylePresetUi = {
+        'cinematic-photo': { label: '电影感摄影', group: '摄影写实', description: '自然光、强对比、专业摄影质感和浅景深。' },
+        'medium-format': { label: '中画幅胶片', group: '摄影写实', description: '电影剧照般的中画幅胶片质感，柔和颗粒和柯达色调。' },
+        'analog-film': { label: '复古模拟胶片', group: '摄影写实', description: '温暖偏色、轻微暗角、褪色高光和复古胶片颗粒。' },
+        'point-and-shoot-candid': { label: '随手抓拍', group: '摄影写实', description: '手持相机的自然抓拍感，轻微运动模糊和闪光灯效果。' },
+        'ansel-adams-landscape': { label: '亚当斯黑白风景', group: '摄影写实', description: '高反差大画幅黑白风景，前景锐利、层次丰富。' },
+        'film-noir': { label: '黑色电影', group: '摄影写实', description: '1940年代黑白电影氛围，深黑阴影和神秘方向光。' },
+        'tilt-shift': { label: '移轴微缩摄影', group: '摄影写实', description: '选择性对焦和微缩模型效果，色彩鲜明、背景虚化。' },
+        'neon-noir': { label: '霓虹黑色电影', group: '科幻与复古未来', description: '雨夜街道、霓虹招牌、低光高反差和湿地反射。' },
+        'cyberpunk': { label: '赛博朋克', group: '科幻与复古未来', description: '密集霓虹、全息影像、电子线路和未来都市氛围。' },
+        'solarpunk': { label: '太阳朋克', group: '科幻与复古未来', description: '绿色植物与科技共生的明亮未来，环保、温暖、乐观。' },
+        'dieselpunk': { label: '柴油朋克', group: '科幻与复古未来', description: '1930年代重工业机械、油污纹理、黄铜和烟雾。' },
+        'steampunk': { label: '蒸汽朋克', group: '科幻与复古未来', description: '维多利亚工业风、齿轮铆钉和暖色古铜机械。' },
+        'art-deco': { label: '装饰艺术', group: '科幻与复古未来', description: '几何造型、强烈对称和华丽金色装饰。' },
+        'epic-concept-art': { label: '史诗概念设计', group: '幻想与概念艺术', description: '宏大场景、英雄构图、空间纵深和游戏概念设计质感。' },
+        'ethereal-fantasy': { label: '空灵幻想', group: '幻想与概念艺术', description: '梦幻、神圣、宏伟的绘画感幻想封面风格。' },
+        'dark-fantasy-painterly': { label: '暗黑幻想绘画', group: '幻想与概念艺术', description: '阴郁的高幻想氛围、戏剧阴影和神秘光线。' },
+        'ghibli-inspired': { label: '吉卜力灵感', group: '幻想与概念艺术', description: '温暖手绘故事感、柔和光线和茂盛环境细节。' },
+        'dark-moebius': { label: '暗黑莫比乌斯', group: '幻想与概念艺术', description: '超现实建筑、硬朗线条、有限色彩和诡异梦境感。' },
+        'anime-key-visual': { label: '动漫主视觉', group: '动漫与漫画', description: '鲜艳细致的动画主视觉，赛璐璐上色和情绪化构图。' },
+        '90s-ova-anime': { label: '90年代OVA动漫', group: '动漫与漫画', description: '复古动画配色、清晰赛璐璐轮廓和怀旧胶片颗粒。' },
+        'manga': { label: '日式黑白漫画', group: '动漫与漫画', description: '黑白墨线、网点阴影、夸张表情和动态速度线。' },
+        'comic-book': { label: '美式漫画', group: '动漫与漫画', description: '粗壮墨线、鲜明平涂、网点阴影和英雄式构图。' },
+        'pixel-art': { label: '像素艺术', group: '艺术与特殊效果', description: '清晰像素格、有限色板和16位复古游戏质感。' },
+        'watercolor': { label: '水彩画', group: '艺术与特殊效果', description: '松散笔触、颜料晕染、鲜活色彩和纸张纹理。' },
+        'stained-glass': { label: '彩色玻璃', group: '艺术与特殊效果', description: '铅条分割、半透明色块和教堂窗户般的背光。' }
+    };
     var defaultSettings = {
         apiUrl: 'https://magic-arthritis-maintain-altered.trycloudflare.com',
         apiKey: '',
@@ -103,6 +130,11 @@ jQuery(async function () {
 
     function normalizeStylePreset(value) {
         return getStylePreset(value).id;
+    }
+
+    function getStylePresetUi(value) {
+        var preset = getStylePreset(value);
+        return stylePresetUi[preset.id] || { label: preset.name, group: '其他', description: '插件将自动补充对应的画风和质量提示词。' };
     }
 
     function buildStyledPrompt(scenePrompt, presetId) {
@@ -866,6 +898,7 @@ jQuery(async function () {
         if (!message) throw new Error('找不到对应楼层消息');
         var scenePrompt = extractImagePrompt(message.mes);
         var selectedStyle = getStylePreset(settings.stylePreset);
+        var selectedStyleUi = getStylePresetUi(selectedStyle.id);
         var prompt = buildStyledPrompt(scenePrompt, selectedStyle.id);
         var request = buildGenerationRequest(messageId, mode || 'normal');
         request.payload.prompt = prompt;
@@ -882,7 +915,8 @@ jQuery(async function () {
                 prompt: prompt,
                 scenePrompt: scenePrompt,
                 stylePreset: selectedStyle.id,
-                styleName: selectedStyle.name,
+                styleName: selectedStyleUi.label,
+                styleEnglishName: selectedStyle.name,
                 imageUrl: imageUrl,
                 savedAt: Date.now()
             };
@@ -923,28 +957,28 @@ jQuery(async function () {
         $('#cpab-resolution').val(normalizeResolution(settings.resolution));
         $('#cpab-steps').val(String(normalizeSteps(settings.steps)));
         $('#cpab-auto-generate').prop('checked', Boolean(settings.autoGenerate));
-        renderStylePresetButtons();
+        renderStylePresetSelect();
         updateQueueBadges();
     }
 
-    function renderStylePresetButtons() {
+    function renderStylePresetSelect() {
         var selected = getStylePreset(settings.stylePreset);
-        var $container = $('#cpab-style-buttons');
-        if (!$container.length) return;
-        $container.empty();
+        var selectedUi = getStylePresetUi(selected.id);
+        var $select = $('#cpab-style-select');
+        if (!$select.length) return;
+        $select.empty();
+        var groups = {};
         stylePresets.forEach(function (preset) {
-            var isSelected = preset.id === selected.id;
-            var $button = $('<button type="button" class="menu_button cpab-style-button"></button>')
-                .attr('data-style-id', preset.id)
-                .attr('aria-pressed', isSelected ? 'true' : 'false')
-                .attr('title', 'Prefix: ' + preset.prefix + '\nSuffix: ' + preset.suffix)
-                .toggleClass('is-selected', isSelected)
-                .text(preset.name);
-            $container.append($button);
+            var ui = getStylePresetUi(preset.id);
+            if (!groups[ui.group]) {
+                groups[ui.group] = $('<optgroup></optgroup>').attr('label', ui.group);
+                $select.append(groups[ui.group]);
+            }
+            groups[ui.group].append($('<option></option>').val(preset.id).text(ui.label));
         });
-        $('#cpab-style-current').text('当前风格：' + selected.name);
-        $('#cpab-style-prefix').text('开头：' + selected.prefix);
-        $('#cpab-style-suffix').text('结尾：' + selected.suffix);
+        $select.val(selected.id);
+        $('#cpab-style-current').text('当前风格：' + selectedUi.label);
+        $('#cpab-style-description').text(selectedUi.description);
     }
 
     function collectSettingsFromUi() {
@@ -957,13 +991,13 @@ jQuery(async function () {
     }
 
     function bindSettingsEvents() {
-        $('#cpab-style-buttons').on('click', '.cpab-style-button', function () {
-            settings.stylePreset = normalizeStylePreset($(this).attr('data-style-id'));
+        $('#cpab-style-select').on('change', function () {
+            settings.stylePreset = normalizeStylePreset($(this).val());
             saveSettings();
-            renderStylePresetButtons();
-            var selected = getStylePreset(settings.stylePreset);
-            setStatus('画风已切换为 ' + selected.name + '，下次生图自动使用');
-            showToast('success', '已选择画风：' + selected.name);
+            renderStylePresetSelect();
+            var selectedUi = getStylePresetUi(settings.stylePreset);
+            setStatus('画风已切换为“' + selectedUi.label + '”，下次生图自动使用');
+            showToast('success', '已选择画风：' + selectedUi.label);
         });
         $('#cpab-check-update').on('click', function () {
             if (updaterState.available) performExtensionUpdate();

@@ -60,29 +60,10 @@
   font-size: 0.85em;
 }
 
-.cpab-style-buttons {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  max-height: 310px;
-  overflow-y: auto;
-  padding-right: 3px;
-}
-
-.cpab-style-button {
-  min-width: 0;
-  min-height: 38px;
-  padding: 5px 7px;
-  white-space: normal;
-  line-height: 1.2;
-  font-size: 0.84em;
-}
-
-.cpab-style-button.is-selected {
-  border-color: #69d98e !important;
-  background: rgba(69, 196, 108, 0.22) !important;
-  color: #a5f3bc !important;
-  box-shadow: inset 0 0 0 1px rgba(69, 196, 108, 0.45);
+.cpab-style-select {
+  width: 100%;
+  min-height: 42px;
+  font-size: 1em;
 }
 
 .cpab-style-preview {
@@ -99,6 +80,12 @@
   margin-bottom: 4px;
   color: #a5f3bc;
   font-weight: 700;
+}
+
+.cpab-style-note {
+  margin-top: 5px;
+  opacity: 0.72;
+  font-size: 0.92em;
 }
 
 .cpab-quota,
@@ -208,8 +195,13 @@
     grid-template-columns: 1fr;
   }
 
-  .cpab-style-buttons {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .cpab-style-section {
+    padding: 9px;
+  }
+
+  .cpab-style-select {
+    min-height: 46px;
+    font-size: 16px;
   }
 }
 
