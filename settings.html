@@ -55,6 +55,11 @@
         </div>
       </div>
 
+      <label class="checkbox_label" for="cpab-auto-generate">
+        <input id="cpab-auto-generate" type="checkbox">
+        <span>自动识别新楼层的绘画提示词并立即生图（每次会消耗额度）</span>
+      </label>
+
       <div class="cpab-actions">
         <button id="cpab-claim-trial" class="menu_button" type="button"><i class="fa-solid fa-gift"></i> 领取免费50次</button>
         <button id="cpab-save" class="menu_button" type="button"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
@@ -74,7 +79,7 @@
                     <img class="cpab-tutorial-image" src="/scripts/extensions/third-party/comfyui-public-api-button/assets/tutorial-worldbook.png" alt="挂载画图世界书并启用画图中文">
                     <ol class="cpab-tutorial-steps" start="2">
                         <li>正常对话，让 AI 回复生成“绘画提示词”。</li>
-                        <li>楼层出现三个生图按钮后，点击需要的按钮开始画图；旁边可以查看当前排队任务数。</li>
+                        <li>楼层出现三个生图按钮后，可以点击按钮画图；也可以在设置中开启“自动识别新楼层并立即生图”。</li>
                     </ol>
                     <img class="cpab-tutorial-image" src="/scripts/extensions/third-party/comfyui-public-api-button/assets/tutorial-buttons.png" alt="绘画提示词、三个生图按钮和排队任务数">
                 </details>
