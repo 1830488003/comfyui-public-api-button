@@ -1203,6 +1203,8 @@ jQuery(async function () {
         renderStylePresetSelect();
         renderResolutionNote();
         updateQueueBadges();
+        /* 去服务端把自定义画风取回来，追加进下拉框（没卡密时静默跳过） */
+        refreshCustomStyles();
     }
 
     function populateStylePresetSelect($select) {
@@ -1220,11 +1222,18 @@ jQuery(async function () {
                 }
                 groups[ui.group].append($('<option></option>').val(preset.id).text(ui.label));
             });
+            /* 下拉框里只放真正的画风。
+               自定义画风在下面的「自定义画风」区里新建/管理，不用在下拉框里再放一个入口。 */
             $current.val(selected.id);
         });
     }
 
     function syncStylePresetControls() {
+        /* 自定义画风还没从服务器拉回来时先不做规范化。
+           因为 getStylePreset() 找不到 id 会回退到默认画风，
+           如果用户上次选的是自定义画风，这里提前规范化会把它悄悄改掉。
+           等 refreshCustomStyles() 拿到数据后再统一处理。 */
+        if (customStylesPending) { return; }
         settings.stylePreset = normalizeStylePreset(settings.stylePreset);
         var selected = getStylePreset(settings.stylePreset);
         var selectedUi = getStylePresetUi(selected.id);
@@ -1236,6 +1245,247 @@ jQuery(async function () {
     function renderStylePresetSelect() {
         populateStylePresetSelect($('#cpab-style-select'));
         syncStylePresetControls();
+    }
+
+    /* ==================== 自定义风格 ====================
+       存在服务端并绑定卡密，所以和网页版共用同一份——用户在网页版存的风格
+       这里直接能选，不用重复添加。
+       实现方式是在运行时把自定义风格追进 stylePresets / stylePresetUi，
+       这样 getStylePreset / buildStyledPrompt 等原有逻辑一行都不用改。 */
+    var CUSTOM_STYLE_ID_PREFIX = 'custom-';
+    var customStylePresets = [];
+    var baseStylePresets = stylePresets.slice();
+    var baseStylePresetUi = Object.assign({}, stylePresetUi);
+    /* 自定义画风是否还没加载完。未加载完之前不要规范化 stylePreset，否则会丢选择 */
+    var customStylesPending = false;
+
+    function isCustomStyleId(id) {
+        return String(id || '').indexOf(CUSTOM_STYLE_ID_PREFIX) === 0;
+    }
+
+    function findCustomStyle(id) {
+        var want = String(id || '');
+        for (var i = 0; i < customStylePresets.length; i++) {
+            if (customStylePresets[i].id === want) { return customStylePresets[i]; }
+        }
+        return null;
+    }
+
+    /* 把「内置 + 自定义」重新拼成一份，内置排前面、自定义单独一组放后面 */
+    function rebuildStylePresets() {
+        stylePresets = baseStylePresets.concat(customStylePresets);
+        stylePresetUi = Object.assign({}, baseStylePresetUi);
+        customStylePresets.forEach(function (preset) {
+            stylePresetUi[preset.id] = {
+                label: preset.name,
+                group: '⭐ 我的自定义风格',
+                description: preset.description || '你自己保存的画风，点击即用。'
+            };
+        });
+    }
+
+    function customStyleApi(path, options) {
+        return apiRequest(path, options);   /* 复用插件的请求层：自动带卡密、自动重试换地址 */
+    }
+
+    function refreshCustomStyles() {
+        if (!settings.apiKey) {
+            /* 没卡密也要收尾，否则规范化会一直被跳过 */
+            customStylesPending = false;
+            renderStylePresetSelect();
+            renderCustomStyleList();
+            return Promise.resolve([]);
+        }
+        customStylesPending = true;
+        return customStyleApi('/v1/styles').then(function (data) {
+            customStylePresets = (data.styles || []).map(function (s) {
+                return {
+                    id: CUSTOM_STYLE_ID_PREFIX + s.id,
+                    serverId: s.id,
+                    name: String(s.name || ''),
+                    label: String(s.name || ''),
+                    description: '自定义画风（网页版与插件共用）',
+                    promptTitle: String(s.name || ''),
+                    prefix: String(s.prefix || ''),
+                    suffix: String(s.suffix || '')
+                };
+            }).filter(function (p) { return p.name; });
+            customStylesPending = false;
+            rebuildStylePresets();
+            renderStylePresetSelect();
+            renderCustomStyleList();
+            return customStylePresets;
+        }).catch(function (error) {
+            /* 没卡密 / 网络不通都不能影响正常生图，静默跳过 */
+            console.warn('[默默画图] 自定义画风读取失败：', error && error.message);
+            customStylesPending = false;
+            renderStylePresetSelect();
+            renderCustomStyleList();
+            return customStylePresets;
+        });
+    }
+
+    function renderCustomStyleList() {
+        var $list = $('#cpab-custom-list');
+        if (!$list.length) { return; }
+        if (!customStylePresets.length) {
+            $list.html('<div class="cpab-custom-empty">还没有自定义画风。填好下面的内容点「保存画风」，' +
+                '保存后这里和网页版都能直接选用。</div>');
+            return;
+        }
+        $list.empty();
+        customStylePresets.forEach(function (preset) {
+            var $item = $('<div class="cpab-custom-item"></div>');
+            $item.append($('<div class="cpab-custom-item-main"></div>')
+                .append($('<div class="cpab-custom-item-name"></div>').text(preset.name))
+                .append($('<div class="cpab-custom-item-desc"></div>')
+                    .text(String(preset.prefix || preset.suffix || '').slice(0, 60))));
+            var $actions = $('<div class="cpab-custom-item-actions"></div>');
+            $('<button class="menu_button" type="button">编辑</button>')
+                .on('click', function () { fillCustomStyleForm(preset.id); })
+                .appendTo($actions);
+            $('<button class="menu_button" type="button">删除</button>')
+                .on('click', function () { deleteCustomStyle(preset.id); })
+                .appendTo($actions);
+            $item.append($actions);
+            $list.append($item);
+        });
+    }
+
+    function setCustomStyleError(message) {
+        var $el = $('#cpab-custom-error');
+        if (!$el.length) { return; }
+        if (!message) { $el.addClass('hidden').text(''); return; }
+        $el.removeClass('hidden').text(String(message));
+    }
+
+    function setCustomStyleTip(message) {
+        var $el = $('#cpab-custom-tip');
+        if (!$el.length) { return; }
+        if (!message) { $el.addClass('hidden').text(''); return; }
+        $el.removeClass('hidden').text(String(message));
+    }
+
+    var editingCustomStyleId = null;
+
+    function syncCustomStyleMode() {
+        var editing = editingCustomStyleId ? findCustomStyle(editingCustomStyleId) : null;
+        var $btn = $('#cpab-custom-save');
+        if ($btn.length) {
+            $btn.text(editing ? '更新这个画风' : '保存为新画风');
+        }
+        if (editing) {
+            var name = String($('#cpab-custom-name').val() || '').trim() || editing.name;
+            setCustomStyleTip('正在编辑「' + editing.name + '」：保存会把它的内容改为上面填的样子' +
+                (name !== editing.name ? '，名称会改成「' + name + '」' : '') + '。');
+        }
+    }
+
+    function clearCustomStyleForm() {
+        editingCustomStyleId = null;
+        $('#cpab-custom-name').val('');
+        $('#cpab-custom-prefix').val('');
+        $('#cpab-custom-suffix').val('');
+        setCustomStyleError('');
+        setCustomStyleTip('');
+        renderCustomStyleList();
+        syncCustomStyleMode();
+    }
+
+    function fillCustomStyleForm(styleId) {
+        var preset = findCustomStyle(styleId);
+        if (!preset) { return; }
+        editingCustomStyleId = styleId;
+        $('#cpab-custom-name').val(preset.name);
+        $('#cpab-custom-prefix').val(preset.prefix);
+        $('#cpab-custom-suffix').val(preset.suffix);
+        setCustomStyleError('');
+        renderCustomStyleList();
+        syncCustomStyleMode();
+        $('#cpab-custom-name').trigger('focus');
+    }
+
+    function saveCustomStyle() {
+        var name = String($('#cpab-custom-name').val() || '').trim();
+        var prefix = String($('#cpab-custom-prefix').val() || '').trim();
+        var suffix = String($('#cpab-custom-suffix').val() || '').trim();
+        if (!name) { setCustomStyleError('请填写画风名称'); return; }
+        if (name === '无风格') { setCustomStyleError('这个名称是内置的，请换一个'); return; }
+        if (!prefix && !suffix) { setCustomStyleError('画风描述和补充说明至少要填一个'); return; }
+        if (!settings.apiKey) { setCustomStyleError('请先在上方填写卡密，自定义画风跟卡密绑定'); return; }
+
+        var payload = { name: name, prefix: prefix, suffix: suffix };
+        if (editingCustomStyleId) {
+            var current = findCustomStyle(editingCustomStyleId);
+            if (current && current.serverId) { payload.id = current.serverId; }
+        }
+        var wasEditing = !!editingCustomStyleId;
+        var $btn = $('#cpab-custom-save');
+        $btn.prop('disabled', true).text('保存中…');
+        setCustomStyleError('');
+
+        customStyleApi('/v1/styles', { method: 'POST', body: JSON.stringify(payload) })
+            .then(function (data) {
+                var savedName = String((data.style && data.style.name) || name);
+                var savedId = data.style && data.style.id;
+                editingCustomStyleId = null;
+                return refreshCustomStyles().then(function () {
+                    /* 保存完直接切过去，用户马上能用 */
+                    if (savedId) {
+                        applyStylePresetSelection(CUSTOM_STYLE_ID_PREFIX + savedId);
+                    } else if (savedName) {
+                        var match = customStylePresets.filter(function (p) { return p.name === savedName; })[0];
+                        if (match) { applyStylePresetSelection(match.id); }
+                    }
+                    clearCustomStyleForm();
+                    setCustomStyleTip(wasEditing ? '画风已更新，网页版和插件都能用' : '画风已保存，网页版和插件都能用');
+                    showToast('success', wasEditing ? '画风已更新' : '画风已保存');
+                });
+            })
+            .catch(function (error) {
+                setCustomStyleError((error && error.message) || '保存失败，请重试');
+            })
+            .then(function () {
+                $btn.prop('disabled', false);
+                syncCustomStyleMode();
+            });
+    }
+
+    function deleteCustomStyle(styleId) {
+        var preset = findCustomStyle(styleId);
+        if (!preset) { return; }
+        if (!window.confirm('确定删除画风「' + preset.name + '」？删除后网页版和插件里都会没有。')) { return; }
+        setCustomStyleError('');
+        customStyleApi('/v1/styles/delete', { method: 'POST', body: JSON.stringify({ id: preset.serverId }) })
+            .then(function () {
+                if (editingCustomStyleId === styleId) { editingCustomStyleId = null; clearCustomStyleForm(); }
+                return refreshCustomStyles().then(function () {
+                    /* 如果当前正用着被删的画风，退回第一个内置画风 */
+                    if (settings.stylePreset === styleId) {
+                        settings.stylePreset = baseStylePresets[0].id;
+                        saveSettings();
+                        renderStylePresetSelect();
+                    }
+                    showToast('success', '画风已删除');
+                });
+            })
+            .catch(function (error) {
+                setCustomStyleError((error && error.message) || '删除失败，请重试');
+            });
+    }
+
+    function bindCustomStyleEvents() {
+        $('#cpab-custom-save').off('click.cpabCustom').on('click.cpabCustom', saveCustomStyle);
+        $('#cpab-custom-reset').off('click.cpabCustom').on('click.cpabCustom', clearCustomStyleForm);
+        $('#cpab-custom-reload').off('click.cpabCustom').on('click.cpabCustom', function () {
+            setCustomStyleTip('正在从服务器重新读取…');
+            refreshCustomStyles().then(function (list) {
+                setCustomStyleTip('已同步，共 ' + list.length + ' 个自定义画风');
+            });
+        });
+        $('#cpab-custom-name').off('input.cpabCustom').on('input.cpabCustom', function () {
+            if (editingCustomStyleId) { syncCustomStyleMode(); }
+        });
     }
 
     function applyStylePresetSelection(presetId) {
@@ -1260,6 +1510,8 @@ jQuery(async function () {
         $('#cpab-style-select').on('change', function () {
             applyStylePresetSelection($(this).val());
         });
+        /* 自定义画风区的按钮与输入 */
+        bindCustomStyleEvents();
         // 切换分辨率时立刻刷新消耗提示（高清档慢约 10 秒、扣 2 次）
         $('#cpab-resolution').on('change', function () {
             collectSettingsFromUi();

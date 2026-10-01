@@ -75,6 +75,124 @@
   opacity: 0.9;
 }
 
+/* 自定义画风管理区 */
+.cpab-custom-section {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--SmartThemeBorderColor, #3a3a3a);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cpab-custom-section > label {
+  display: block;
+  margin-top: 10px;
+  font-size: 0.88em;
+  opacity: 0.9;
+}
+
+.cpab-custom-section textarea.text_pole {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.cpab-custom-tip,
+.cpab-custom-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.86em;
+  line-height: 1.6;
+}
+
+.cpab-custom-tip {
+  border: 1px solid rgba(91, 140, 255, 0.4);
+  background: rgba(91, 140, 255, 0.1);
+}
+
+.cpab-custom-error {
+  border: 1px solid rgba(255, 112, 137, 0.45);
+  background: rgba(255, 112, 137, 0.12);
+  color: #ffd0d9;
+}
+
+.cpab-custom-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.cpab-custom-empty {
+  border: 1px dashed var(--SmartThemeBorderColor, #3a3a3a);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.86em;
+  line-height: 1.7;
+  opacity: 0.75;
+}
+
+.cpab-custom-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--SmartThemeBorderColor, #3a3a3a);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.cpab-custom-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.cpab-custom-item-name {
+  font-weight: 700;
+  font-size: 0.94em;
+  word-break: break-all;
+}
+
+.cpab-custom-item-desc {
+  margin-top: 3px;
+  font-size: 0.84em;
+  opacity: 0.72;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.cpab-custom-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.cpab-custom-item-actions .menu_button {
+  padding: 4px 10px;
+  font-size: 0.84em;
+}
+
+.cpab-custom-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.cpab-custom-actions .menu_button {
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+
+.cpab-custom-note {
+  margin-top: 10px;
+  font-size: 0.84em;
+  line-height: 1.6;
+  opacity: 0.72;
+}
+
 .cpab-key-row,
 .cpab-actions {
   display: flex;

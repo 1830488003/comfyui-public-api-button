@@ -91,6 +91,28 @@
         </div>
       </div>
 
+      <div class="cpab-custom-section" id="cpab-custom-section">
+        <div class="cpab-style-head">
+          <strong>自定义画风</strong>
+          <span>在这里新建和管理，保存后直接出现在上面的下拉框里</span>
+        </div>
+        <div class="cpab-custom-tip hidden" id="cpab-custom-tip"></div>
+        <div class="cpab-custom-error hidden" id="cpab-custom-error"></div>
+        <div class="cpab-custom-list" id="cpab-custom-list"></div>
+        <label for="cpab-custom-name">画风名称（显示在下拉框里）</label>
+        <input id="cpab-custom-name" class="text_pole" type="text" maxlength="40" placeholder="例如：我的国潮插画">
+        <label for="cpab-custom-prefix">画风描述（放在你的描述前面）</label>
+        <textarea id="cpab-custom-prefix" class="text_pole" rows="3" maxlength="1000" placeholder="例如：中国潮流插画，京剧脸谱元素，红金配色，龙纹"></textarea>
+        <label for="cpab-custom-suffix">补充说明（放在你的描述后面，可留空）</label>
+        <textarea id="cpab-custom-suffix" class="text_pole" rows="3" maxlength="1000" placeholder="例如：厚涂质感，强对比，海报构图"></textarea>
+        <div class="cpab-custom-actions">
+          <button id="cpab-custom-save" class="menu_button" type="button"><i class="fa-solid fa-floppy-disk"></i> 保存为新画风</button>
+          <button id="cpab-custom-reset" class="menu_button" type="button"><i class="fa-solid fa-eraser"></i> 清空重填</button>
+          <button id="cpab-custom-reload" class="menu_button" type="button" title="从服务器重新读取（在另一台设备上改过时用）"><i class="fa-solid fa-rotate"></i> 同步</button>
+        </div>
+        <div class="cpab-custom-note">保存后会自动加进上面的「选择画风」下拉框，并立即切换过去。<b>网页版和酒馆插件都能选用</b>，跟卡密绑定，换电脑也还在。</div>
+      </div>
+
       <div class="cpab-actions">
         <button id="cpab-claim-trial" class="menu_button" type="button"><i class="fa-solid fa-gift"></i> 领取免费50次</button>
         <button id="cpab-save" class="menu_button" type="button"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
