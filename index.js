@@ -1559,14 +1559,27 @@ jQuery(async function () {
        注入不改动用户的世界书列表，也不会在用户目录里留文件；
        而且指令随插件版本走，以后改指令老用户自动生效。
 
-       位置与角色：作者注释同款（IN_CHAT / 深度 1 / SYSTEM）。
-       深度 1 表示插在最后一条用户消息之前，既靠近末尾影响力强，
-       又不会被当成新一轮回复。 */
+       位置与角色：见下面 DRAWING_INSTRUCTION_DEPTH 的说明（IN_CHAT / 深度 0 / SYSTEM）。 */
     var drawingInstructionCache = null;
     var drawingInstructionLoading = null;
     var DRAWING_INSTRUCTION_KEY = 'cpab_drawing_instruction';
-    /* 仅供离线测试覆盖，正常运行始终为 null */
+
+    /* 以下三个仅供离线测试注入，正常运行始终为 null / 空对象 */
     var extensionContextOverride = null;
+    var depsOverride = {};
+    var WORLDBOOK_DEPS = {
+        saveSettings: function () { saveSettings(); },
+        showToast: function (kind, message) { showToast(kind, message); },
+        effectiveInstructionText: function () { return effectiveInstructionText(); },
+        getSettingsRoot: function () { return getSettingsRoot(); },
+        setInstructionEditorMessage: function (m, isError) { setInstructionEditorMessage(m, isError); },
+        clearDrawingInstruction: function () { clearDrawingInstruction(); },
+        refreshInstructionStatus: function () { refreshInstructionStatus(); },
+        refreshWorldbookStatus: function () { refreshWorldbookStatus(); },
+    };
+    function deps() {
+        return Object.assign({}, WORLDBOOK_DEPS, depsOverride || {});
+    }
 
     /* 酒馆的 extension prompt 枚举值。这两个枚举是公开且固定的：
          extension_prompt_types = { NONE: -1, IN_PROMPT: 0, IN_CHAT: 1, BEFORE_PROMPT: 2 }
@@ -1766,6 +1779,253 @@ jQuery(async function () {
         setInstructionEditorMessage('');
     }
 
+    /* ---------------- 备用方案：安装为世界书 ----------------
+       用途：万一某些酒馆版本拿不到 setExtensionPrompt，自动注入就用不了。
+       这里把同一份指令写成一本真正的世界书，并自动全局启用，
+       效果和以前手动导入世界书完全一样。
+
+       注意：世界书和内置注入**同时生效会导致指令重复**，
+       所以点「安装为世界书」时会自动关掉内置注入，两者互斥。 */
+
+    var WORLDBOOK_NAME = '默默画图世界书';
+
+    /* 优先使用 TavernHelper API（由 JS-Slash-Runner 扩展提供）。
+       这是酒馆生态里挂载世界书最可靠的官方路子：
+         setLorebookSettings({ selected_global_lorebooks: [...] }) 直接写全局启用，
+       比自己去改 settings.world_info.globalSelect 稳妥得多。
+       本机另一个扩展 my-world-book-momo 也是走这套 API 的。 */
+    function getTavernHelper() {
+        if (typeof window === 'undefined') return null;
+        var helper = window.TavernHelper;
+        if (helper && typeof helper.setLorebookSettings === 'function') return helper;
+        return null;
+    }
+
+    function delay(ms) {
+        return new Promise(function (resolve) { setTimeout(resolve, ms); });
+    }
+
+    /* TavernHelper 是别的扩展注入的，可能比我们晚一点就绪，轮询等一下 */
+    async function waitForTavernHelper(retries, interval) {
+        var tries = retries || 10;
+        var gap = interval || 300;
+        for (var i = 0; i < tries; i++) {
+            var helper = getTavernHelper();
+            if (helper) return helper;
+            await delay(gap);
+        }
+        return null;
+    }
+
+    /* 把「默默画图世界书」加入 / 移出全局启用列表 */
+    async function setWorldbookGloballyEnabled(enabled) {
+        var helper = await waitForTavernHelper(8, 300);
+        if (!helper) return { ok: false, reason: 'no-helper' };
+        try {
+            var current = await helper.getLorebookSettings();
+            var list = (current && current.selected_global_lorebooks) || [];
+            list = list.map(function (x) { return String(x || ''); }).filter(Boolean);
+            var has = list.indexOf(WORLDBOOK_NAME) >= 0;
+            if (enabled && !has) list.push(WORLDBOOK_NAME);
+            if (!enabled && has) list = list.filter(function (x) { return x !== WORLDBOOK_NAME; });
+            if (has !== enabled) {
+                await helper.setLorebookSettings({ selected_global_lorebooks: list });
+            }
+            return { ok: true, helper: true, active: enabled };
+        } catch (error) {
+            console.warn('[' + extensionName + '] TavernHelper 设置世界书失败：', error && error.message);
+            return { ok: false, reason: 'helper-error', error: error };
+        }
+    }
+
+    function getSettingsRoot() {
+        if (typeof window === 'undefined') return null;
+        return window.extension_settings || null;
+    }
+
+    function getStContext() {
+        return extensionContextOverride || contextGetter();
+    }
+
+    /* 按酒馆的世界书字段生成一本。字段取值对齐你原来那本「画图世界书」：
+       constant=true 表示不需要关键词、常驻生效；
+       position=4 (atDepth) + depth=0 + role=0 (SYSTEM) 就是插在上下文最末尾。 */
+    function buildWorldbookData(content) {
+        return {
+            entries: {
+                '0': {
+                    uid: 0,
+                    key: [],
+                    keysecondary: [],
+                    comment: '默默画图 · 绘图指令',
+                    content: String(content || ''),
+                    constant: true,
+                    vectorized: false,
+                    selective: true,
+                    selectiveLogic: 0,
+                    addMemo: true,
+                    order: 99999,
+                    position: 4,
+                    disable: false,
+                    excludeRecursion: false,
+                    preventRecursion: false,
+                    delayUntilRecursion: false,
+                    probability: 100,
+                    useProbability: true,
+                    depth: 0,
+                    group: '',
+                    groupOverride: false,
+                    groupWeight: 100,
+                    scanDepth: null,
+                    caseSensitive: null,
+                    matchWholeWord: null,
+                    matchWholeWords: null,
+                    useGroupScoring: null,
+                    automationId: '',
+                    role: 0,
+                    sticky: null,
+                    cooldown: null,
+                    delay: null,
+                    displayIndex: 0,
+                },
+            },
+        };
+    }
+
+    function worldbookApiAvailable() {
+        var context = getStContext();
+        var headers = context && typeof context.getRequestHeaders === 'function'
+            ? context.getRequestHeaders()
+            : null;
+        return !!headers;
+    }
+
+    /* 把世界书写进用户的世界书目录，并全局启用 */
+    async function installWorldbook() {
+        var context = getStContext();
+        if (!context || typeof context.getRequestHeaders !== 'function') {
+            deps().setInstructionEditorMessage('当前环境拿不到酒馆接口，无法自动安装世界书。请手动导入。', true);
+            return;
+        }
+        var instruction = deps().effectiveInstructionText();
+        if (!instruction) {
+            deps().setInstructionEditorMessage('指令内容为空，无法生成世界书。', true);
+            return;
+        }
+
+        var $btn = $('#cpab-install-worldbook');
+        if ($btn.length) { $btn.prop('disabled', true); }
+        deps().setInstructionEditorMessage('正在写入世界书…');
+
+        var notes = [];
+        try {
+            /* ---- 1) 写入世界书文件（这一步只能用官方接口） ---- */
+            var response = await fetch('/api/worldinfo/edit', {
+                method: 'POST',
+                headers: context.getRequestHeaders(),
+                body: JSON.stringify({ name: WORLDBOOK_NAME, data: buildWorldbookData(instruction) }),
+            });
+            if (!response.ok) {
+                throw new Error('写入世界书文件失败 HTTP ' + response.status);
+            }
+
+            /* ---- 2) 全局启用：优先 TavernHelper，其次直接改设置 ---- */
+            var activated = false;
+            var helperResult = await setWorldbookGloballyEnabled(true);
+            if (helperResult.ok) {
+                activated = true;
+                notes.push('已通过 TavernHelper 全局启用');
+            } else {
+                /* 回落：直接写 settings.world_info.globalSelect */
+                var root = deps().getSettingsRoot();
+                if (root) {
+                    root.world_info = root.world_info || {};
+                    if (!Array.isArray(root.world_info.globalSelect)) root.world_info.globalSelect = [];
+                    if (root.world_info.globalSelect.indexOf(WORLDBOOK_NAME) < 0) {
+                        root.world_info.globalSelect.push(WORLDBOOK_NAME);
+                    }
+                    activated = true;
+                    if (typeof context.saveSettingsDebounced === 'function') context.saveSettingsDebounced();
+                    else if (typeof window !== 'undefined' && typeof window.saveSettingsDebounced === 'function') window.saveSettingsDebounced();
+                    notes.push(helperResult.reason === 'no-helper'
+                        ? '未检测到 TavernHelper，已改为直接写入酒馆设置'
+                        : 'TavernHelper 调用失败，已改为直接写入酒馆设置');
+                } else {
+                    notes.push('未能自动启用，请到世界书面板手动勾选「' + WORLDBOOK_NAME + '」');
+                }
+            }
+
+            /* ---- 3) 关掉内置注入，避免同一段指令出现两次 ---- */
+            settings.injectDrawingInstruction = false;
+            deps().saveSettings();
+            deps().clearDrawingInstruction();
+            deps().refreshInstructionStatus();
+            deps().refreshWorldbookStatus();
+
+            deps().setInstructionEditorMessage(
+                '已安装世界书「' + WORLDBOOK_NAME + '」。' + notes.join('；') +
+                '。同时关闭了内置注入（避免指令重复）。' +
+                (activated ? ' 若世界书面板里看不到它，刷新页面即可。' : ''),
+                !activated);
+            deps().showToast('success', activated ? '世界书已安装并启用' : '世界书已写入，但需手动启用');
+        } catch (error) {
+            deps().setInstructionEditorMessage('安装世界书失败：' + (error && error.message ? error.message : error), true);
+        } finally {
+            if ($btn.length) { $btn.prop('disabled', false); }
+        }
+    }
+
+    /* 卸载：从全局启用列表里去掉（不删文件，方便用户自己决定） */
+    async function uninstallWorldbook() {
+        var removed = false;
+        var helperResult = await setWorldbookGloballyEnabled(false);
+        if (helperResult.ok) removed = true;
+
+        /* 不管走哪条路，都把设置里也清一遍，避免残留导致重复 */
+        var root = deps().getSettingsRoot();
+        if (root && root.world_info && Array.isArray(root.world_info.globalSelect)) {
+            var idx = root.world_info.globalSelect.indexOf(WORLDBOOK_NAME);
+            if (idx >= 0) { root.world_info.globalSelect.splice(idx, 1); removed = true; }
+        }
+        var context = getStContext();
+        if (typeof context?.saveSettingsDebounced === 'function') context.saveSettingsDebounced();
+        else if (typeof window !== 'undefined' && typeof window.saveSettingsDebounced === 'function') window.saveSettingsDebounced();
+
+        /* 恢复内置注入 */
+        settings.injectDrawingInstruction = true;
+        deps().saveSettings();
+        applyDrawingInstruction();
+        deps().refreshWorldbookStatus();
+
+        deps().setInstructionEditorMessage(removed
+            ? '已取消全局启用「' + WORLDBOOK_NAME + '」，并恢复内置注入。世界书文件仍保留，可在世界书面板删除。'
+            : '没有找到已启用的「' + WORLDBOOK_NAME + '」，已恢复内置注入。', false);
+        deps().showToast('success', '已恢复内置注入');
+    }
+
+    function isWorldbookActive() {
+        var root = getSettingsRoot();
+        if (root && root.world_info && Array.isArray(root.world_info.globalSelect) &&
+            root.world_info.globalSelect.indexOf(WORLDBOOK_NAME) >= 0) {
+            return true;
+        }
+        /* TavernHelper 的启用列表可能还没同步到 extension_settings，这里只作补充判断 */
+        return false;
+    }
+
+    function refreshWorldbookStatus() {
+        var $el = $('#cpab-worldbook-status');
+        if (!$el.length) return;
+        var active = isWorldbookActive();
+        var injecting = settings.injectDrawingInstruction !== false;
+        var parts = [];
+        parts.push(active ? '世界书「' + WORLDBOOK_NAME + '」已全局启用' : '未启用世界书');
+        parts.push(injecting ? '内置注入开启' : '内置注入已关闭');
+        $el.text(parts.join(' · ') + (active && injecting ? '（警告：两者同时开启会导致指令重复）' : ''));
+        $el.removeClass('is-ok is-warn');
+        $el.addClass(active && injecting ? 'is-warn' : 'is-ok');
+    }
+
     function saveInstructionFromEditor() {
         var text = String($('#cpab-instruction-text').val() || '').trim();
         if (!text) {
@@ -1815,6 +2075,10 @@ jQuery(async function () {
             if (willShow) { await loadInstructionIntoEditor(); }
         });
         $('#cpab-instruction-text').off('input.cpabInstr').on('input.cpabInstr', refreshInstructionEditorInfo);
+        // 备用方案：安装 / 取消世界书
+        $('#cpab-install-worldbook').off('click.cpabInstr').on('click.cpabInstr', installWorldbook);
+        $('#cpab-uninstall-worldbook').off('click.cpabInstr').on('click.cpabInstr', uninstallWorldbook);
+        refreshWorldbookStatus();
 
         // 切换分辨率时立刻刷新消耗提示（高清档慢约 10 秒、扣 2 次）
         $('#cpab-resolution').on('change', function () {

@@ -289,6 +289,32 @@
   font-size: 0.92em;
 }
 
+/* 备用方案：安装为世界书 */
+.cpab-worldbook-panel {
+  margin: 4px 0 14px;
+  padding: 12px 13px;
+  border: 1px solid rgba(245, 196, 81, 0.3);
+  border-radius: 10px;
+  background: rgba(245, 196, 81, 0.06);
+}
+
+.cpab-worldbook-status {
+  margin-top: 9px;
+  font-size: 0.83em;
+  line-height: 1.6;
+  opacity: 0.8;
+}
+
+.cpab-worldbook-status.is-warn {
+  opacity: 1;
+  color: #ffb020;
+}
+
+.cpab-worldbook-status.is-ok {
+  opacity: 1;
+  color: #3ecf8e;
+}
+
 /* 绘图指令编辑器 */
 .cpab-instruction-panel {
   margin: 4px 0 14px;

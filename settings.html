@@ -120,6 +120,26 @@
         </div>
       </div>
 
+      <div class="cpab-worldbook-panel">
+        <div class="cpab-instruction-head">
+          <strong><i class="fa-solid fa-book"></i> 备用方案：安装为世界书</strong>
+        </div>
+        <p class="cpab-instruction-intro">
+          插件默认用「自动注入」把上面那段指令发给 AI。万一你的酒馆版本比较老、
+          拿不到自动注入的接口，就可以改用这里的<strong>世界书方式</strong>——
+          一键把同一段指令写成本地世界书并<strong>自动全局启用</strong>，效果完全一样。
+        </p>
+        <p class="cpab-instruction-intro">
+          <strong>注意</strong>：两种方式同时开启会让同一段指令出现两次、白占字数，
+          所以点「安装为世界书」时会<strong>自动关掉内置注入</strong>，两者互斥。
+        </p>
+        <div class="cpab-worldbook-status" id="cpab-worldbook-status"></div>
+        <div class="cpab-instruction-actions">
+          <button id="cpab-install-worldbook" class="menu_button" type="button"><i class="fa-solid fa-download"></i> 安装为世界书并全局启用</button>
+          <button id="cpab-uninstall-worldbook" class="menu_button" type="button"><i class="fa-solid fa-rotate-left"></i> 取消并恢复内置注入</button>
+        </div>
+      </div>
+
       <div class="cpab-style-section">
         <div class="cpab-style-head">
           <strong>选择画风</strong>
