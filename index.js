@@ -6,6 +6,9 @@ jQuery(async function () {
     var extensionFolderPath = '/scripts/extensions/third-party/' + extensionName;
     var endpointDiscoveryUrl = 'https://momo-draw-endpoint.1830488003.workers.dev/v1/endpoint';
     var endpointDiscoveryIntervalMs = 30000;
+    // 固定域名。与公告 Worker 的 FIXED_DOMAINS 白名单保持一致，
+    // 改动其中一边时另一边也要同步改（WORKER: endpoint-registry/worker.js）。
+    var apiUrlWhitelist = ['draw.410847381.xyz'];
     var updaterRepoOwner = '1830488003';
     var updaterRepoName = 'comfyui-public-api-button';
     var storageKey = 'comfyui_public_api_button_settings';
@@ -103,7 +106,7 @@ jQuery(async function () {
         'stained-glass': { label: '彩色玻璃', group: '艺术与特殊效果', description: '铅条分割、半透明色块和教堂窗户般的背光。' }
     };
     var defaultSettings = {
-        apiUrl: 'https://magic-arthritis-maintain-altered.trycloudflare.com',
+        apiUrl: 'https://draw.410847381.xyz',
         apiKey: '',
         installId: '',
         resolution: '768x512',
@@ -184,6 +187,36 @@ jQuery(async function () {
             '画面主体与场景内容：' + sceneText + '。',
             String(preset.suffix || '').trim() + '。'
         ].filter(Boolean).join('');
+    }
+
+    // 一次性迁移：固定域名上线后，用户 localStorage 里可能还存着已失效的旧
+    // trycloudflare 地址（老版本写死的默认值）。
+    //
+    // 注意：旧地址的「格式」本身仍符合 trycloudflare 规则，会被 isAllowedApiUrl 放行，
+    // 所以不能只靠白名单判断，必须显式列出这些已知死地址。
+    // 地址发现虽然会在启动时强制刷新，但万一公告接口当时不可用，就会一直沿用死地址
+    // 并报「无法连接服务器」。清掉后回落成 defaultSettings.apiUrl（固定域名），保证能恢复。
+    var legacyDeadApiUrls = [
+        'https://magic-arthritis-maintain-altered.trycloudflare.com'
+    ];
+    var apiUrlMigrated = false;
+    try {
+        var migrateStore = JSON.parse(localStorage.getItem(storageKey) || '{}') || {};
+        var storedUrl = normalizeApiUrl(migrateStore.apiUrl);
+        var isDeadLegacy = storedUrl && legacyDeadApiUrls.some(function (dead) {
+            return normalizeApiUrl(dead).toLowerCase() === storedUrl.toLowerCase();
+        });
+        if (storedUrl && (isDeadLegacy || !isAllowedApiUrl(storedUrl))) {
+            console.warn('[' + extensionName + '] 清除失效的旧服务器地址：', migrateStore.apiUrl);
+            delete migrateStore.apiUrl;
+            localStorage.setItem(storageKey, JSON.stringify(migrateStore));
+            apiUrlMigrated = true;
+        }
+    } catch (error) {
+        console.warn('[' + extensionName + '] 旧地址迁移失败', error);
+    }
+    if (apiUrlMigrated && extensionSettingsRoot[extensionName]) {
+        delete extensionSettingsRoot[extensionName].apiUrl;
     }
 
     var settings = Object.assign({}, defaultSettings, loadLocalSettings(), extensionSettingsRoot[extensionName]);
@@ -478,6 +511,23 @@ jQuery(async function () {
         return String(value || '').trim().replace(/\/+$/, '');
     }
 
+    // 校验公告接口下发的地址是否合法。
+    // 必须同时接受两种形式，否则插件会静默丢掉固定域名并回落到写死的旧地址：
+    //   1. 固定域名（生产入口，如 https://draw.410847381.xyz）
+    //   2. 快速隧道（应急回退，如 https://xxx-yyy.trycloudflare.com）
+    function isAllowedApiUrl(value) {
+        var url = normalizeApiUrl(value);
+        if (!/^https:\/\//i.test(url)) return false;
+        for (var i = 0; i < apiUrlWhitelist.length; i++) {
+            var host = String(apiUrlWhitelist[i]).toLowerCase();
+            // 精确匹配整个主机名，避免 evildraw.xxx 这类前缀/后缀冒充
+            if (new RegExp('^https://' + host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i').test(url)) {
+                return true;
+            }
+        }
+        return /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(url);
+    }
+
 
     async function refreshDiscoveredApiUrl(force, silent) {
         var now = Date.now();
@@ -500,8 +550,10 @@ jQuery(async function () {
                 throw new Error((data && data.error) || '服务器地址公告暂不可用');
             }
             var discovered = normalizeApiUrl(data.api_url);
-            if (!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(discovered)) {
-                throw new Error('服务器地址公告中的网址无效');
+            if (!isAllowedApiUrl(discovered)) {
+                console.warn('[' + extensionName + '] 公告接口下发了不在白名单内的地址，已忽略：', discovered);
+                throw new Error('服务器地址公告中的网址无效：' + discovered
+                    + '（插件白名单：' + apiUrlWhitelist.join(', ') + '）');
             }
             var changed = discovered !== normalizeApiUrl(settings.apiUrl);
             settings.apiUrl = discovered;
