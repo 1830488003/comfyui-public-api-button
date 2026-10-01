@@ -36,14 +36,32 @@
         <button id="cpab-toggle-key" class="menu_button" type="button" title="显示或隐藏卡密"><i class="fa-solid fa-eye"></i></button>
       </div>
 
+      <div class="cpab-recharge">
+        <div class="cpab-recharge-head">
+          <strong>充值 / 购买次数</strong>
+          <span>5元500次 · 10元1200次 · 20元包月不限额</span>
+        </div>
+        <div class="cpab-recharge-actions">
+          <button id="cpab-open-recharge" class="menu_button" type="button"><i class="fa-solid fa-cart-shopping"></i> 打开充值页面</button>
+          <button id="cpab-paste-key" class="menu_button" type="button" title="如果拿到的是一张新卡密，点这里粘贴"><i class="fa-solid fa-paste"></i> 粘贴新卡密</button>
+        </div>
+        <div class="cpab-recharge-note" id="cpab-recharge-note">
+          在充值页面用支付宝扫码付款，点了「我已付款」后群主会尽快审核。<br>
+          原卡是<b>次数卡</b>买次数套餐会<b>直接加次数</b>，不用换密钥；买月卡或原卡是月卡，会发一张新卡密，用右侧「粘贴新卡密」贴进来即可。
+        </div>
+      </div>
+
       <div class="cpab-grid">
         <div>
           <label for="cpab-resolution">分辨率</label>
           <select id="cpab-resolution" class="text_pole">
-            <option value="512x768">512 × 768 竖图</option>
-            <option value="512x512">512 × 512 方图</option>
-            <option value="768x512">768 × 512 横图</option>
+            <option value="512x768">512 × 768 竖图（快）</option>
+            <option value="512x512">512 × 512 方图（快）</option>
+            <option value="768x512">768 × 512 横图（快）</option>
+            <option value="720x1280">720 × 1280 竖图（高清：慢约 10 秒，消耗 2 次）</option>
+            <option value="1280x720">1280 × 720 横图（高清：慢约 10 秒，消耗 2 次）</option>
           </select>
+          <div class="cpab-res-note" id="cpab-res-note">高清档（720p）生成慢约 10 秒，每次消耗 2 次额度；普通档消耗 1 次。</div>
         </div>
         <div>
           <label for="cpab-steps">步数</label>

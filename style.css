@@ -16,6 +16,65 @@
   line-height: 1.45;
 }
 
+/* 分辨率消耗提示：普通档弱化，高清档高亮提醒「慢 10 秒、扣 2 次」 */
+.cpab-res-note {
+  margin-top: 6px;
+  font-size: 0.86em;
+  line-height: 1.4;
+  color: var(--SmartThemeBodyColor, #bbb);
+  opacity: 0.85;
+}
+
+.cpab-res-note.is-warn {
+  opacity: 1;
+  color: #ffcc66;
+  border-left: 3px solid #ffcc66;
+  padding-left: 8px;
+  background: rgba(255, 204, 102, 0.08);
+  border-radius: 0 4px 4px 0;
+}
+
+/* 充值入口 */
+.cpab-recharge {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--SmartThemeBorderColor, #3a3a3a);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cpab-recharge-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.cpab-recharge-head span {
+  color: var(--SmartThemeBodyColor, #bbb);
+  font-size: 0.86em;
+  opacity: 0.85;
+}
+
+.cpab-recharge-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cpab-recharge-actions .menu_button {
+  flex: 1 1 auto;
+  min-width: 140px;
+}
+
+.cpab-recharge-note {
+  margin-top: 10px;
+  color: var(--SmartThemeBodyColor, #bbb);
+  font-size: 0.86em;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+
 .cpab-key-row,
 .cpab-actions {
   display: flex;
