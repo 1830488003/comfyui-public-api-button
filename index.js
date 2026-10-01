@@ -64,24 +64,24 @@ jQuery(async function () {
         { id: 'tilt-shift', name: 'Tilt Shift', promptTitle: '移轴微缩摄影风格', prefix: '移轴摄影，选择性对焦，微缩模型效果', suffix: '背景虚化，鲜艳饱和度，玩具场景观感' }
     ];
     var stylePresetUi = {
-        'genshin-open-world': { label: '原神感三维游戏', group: '🔥 热门动漫与游戏', description: '纯提示词生成：三维开放世界游戏建模、赛璐璐渲染、元素特效和明亮幻想场景。' },
-        'arknights-tactical': { label: '明日方舟感战术插画', group: '🔥 热门动漫与游戏', description: '纯提示词生成：二维战术宣传图、工业末世都市、机能服装和克制冷色设计。' },
-        'gacha-character-splash': { label: '热门二游角色立绘', group: '🔥 热门动漫与游戏', description: '纯提示词生成：二维抽卡角色立绘、华丽服装、动态姿态和环绕式技能特效。' },
-        'donghua-3d-character': { label: '国漫三维角色', group: '🔥 热门动漫与游戏', description: '纯提示词生成：电影级三维国漫人物、东方半写实五官、仙侠材质和体积光。' },
-        'kpop-idol-concept': { label: '韩国女团概念照', group: '🔥 热门写真与设计', description: '真人女团回归概念照，强调妆造、棚拍灯光和商业海报质感。' },
-        'korean-clean-girl': { label: '韩系清冷女友感', group: '🔥 热门写真与设计', description: '真人韩系生活人像，淡妆、低饱和穿搭和柔和窗边光。' },
-        'douyin-fashion': { label: '抖音爆款穿搭', group: '🔥 热门写真与设计', description: '真人短视频穿搭封面，突出身材比例、手机构图和鲜明调色。' },
-        'y2k-streetwear': { label: '千禧辣妹街拍', group: '🔥 热门写真与设计', description: '真人千禧辣妹街拍，直闪、低腰穿搭和夜间霓虹街景。' },
-        'dopamine-fashion': { label: '多巴胺穿搭', group: '🔥 热门写真与设计', description: '真人高饱和时尚广告，强调撞色服装和快乐活力。' },
-        'old-money-glamour': { label: '千金老钱风', group: '🔥 热门写真与设计', description: '真人低调奢华杂志大片，经典剪裁、庄园环境和奶油色调。' },
-        'guochao-streetwear': { label: '国潮街头', group: '🔥 热门写真与设计', description: '真人国潮广告，传统纹样结合街头廓形和中国城市背景。' },
-        'new-chinese-chic': { label: '新中式穿搭', group: '🔥 热门写真与设计', description: '真人新中式时尚摄影，现代剪裁结合立领盘扣和东方面料。' },
-        'hanfu-cinematic': { label: '汉服仙侠大片', group: '🔥 热门写真与设计', description: '真人古装影视剧照，真实演员、汉服材质和仙侠电影场景。' },
-        'xiaohongshu-lifestyle': { label: '小红书氛围感', group: '🔥 热门写真与设计', description: '真人精致生活照片，咖啡旅行场景、窗边光和笔记封面构图。' },
-        'phone-flash-candid': { label: '手机闪光灯随拍', group: '🔥 热门写真与设计', description: '真人手机直闪抓拍，轻微过曝、随手构图和夜生活氛围。' },
-        'korean-webtoon': { label: '韩漫恋爱感', group: '🔥 热门动漫与游戏', description: '纯提示词生成：现代都市恋爱韩漫封面，修长人物、精致线稿和浪漫互动。' },
-        'cosplay-realism': { label: '高还原角色扮演写真', group: '🔥 热门写真与设计', description: '真人高还原角色扮演写真，准确服装道具和电影级实景灯光。' },
-        'blindbox-3d': { label: '潮玩盲盒三维', group: '🔥 热门写真与设计', description: '明确三维潮玩商品渲染，大头小身体、搪胶材质和影棚陈列。' },
+        'genshin-open-world': { label: '原神感三维游戏', group: '热门动漫与游戏', description: '纯提示词生成：三维开放世界游戏建模、赛璐璐渲染、元素特效和明亮幻想场景。' },
+        'arknights-tactical': { label: '明日方舟感战术插画', group: '热门动漫与游戏', description: '纯提示词生成：二维战术宣传图、工业末世都市、机能服装和克制冷色设计。' },
+        'gacha-character-splash': { label: '热门二游角色立绘', group: '热门动漫与游戏', description: '纯提示词生成：二维抽卡角色立绘、华丽服装、动态姿态和环绕式技能特效。' },
+        'donghua-3d-character': { label: '国漫三维角色', group: '热门动漫与游戏', description: '纯提示词生成：电影级三维国漫人物、东方半写实五官、仙侠材质和体积光。' },
+        'kpop-idol-concept': { label: '韩国女团概念照', group: '热门写真与设计', description: '真人女团回归概念照，强调妆造、棚拍灯光和商业海报质感。' },
+        'korean-clean-girl': { label: '韩系清冷女友感', group: '热门写真与设计', description: '真人韩系生活人像，淡妆、低饱和穿搭和柔和窗边光。' },
+        'douyin-fashion': { label: '抖音爆款穿搭', group: '热门写真与设计', description: '真人短视频穿搭封面，突出身材比例、手机构图和鲜明调色。' },
+        'y2k-streetwear': { label: '千禧辣妹街拍', group: '热门写真与设计', description: '真人千禧辣妹街拍，直闪、低腰穿搭和夜间霓虹街景。' },
+        'dopamine-fashion': { label: '多巴胺穿搭', group: '热门写真与设计', description: '真人高饱和时尚广告，强调撞色服装和快乐活力。' },
+        'old-money-glamour': { label: '千金老钱风', group: '热门写真与设计', description: '真人低调奢华杂志大片，经典剪裁、庄园环境和奶油色调。' },
+        'guochao-streetwear': { label: '国潮街头', group: '热门写真与设计', description: '真人国潮广告，传统纹样结合街头廓形和中国城市背景。' },
+        'new-chinese-chic': { label: '新中式穿搭', group: '热门写真与设计', description: '真人新中式时尚摄影，现代剪裁结合立领盘扣和东方面料。' },
+        'hanfu-cinematic': { label: '汉服仙侠大片', group: '热门写真与设计', description: '真人古装影视剧照，真实演员、汉服材质和仙侠电影场景。' },
+        'xiaohongshu-lifestyle': { label: '小红书氛围感', group: '热门写真与设计', description: '真人精致生活照片，咖啡旅行场景、窗边光和笔记封面构图。' },
+        'phone-flash-candid': { label: '手机闪光灯随拍', group: '热门写真与设计', description: '真人手机直闪抓拍，轻微过曝、随手构图和夜生活氛围。' },
+        'korean-webtoon': { label: '韩漫恋爱感', group: '热门动漫与游戏', description: '纯提示词生成：现代都市恋爱韩漫封面，修长人物、精致线稿和浪漫互动。' },
+        'cosplay-realism': { label: '高还原角色扮演写真', group: '热门写真与设计', description: '真人高还原角色扮演写真，准确服装道具和电影级实景灯光。' },
+        'blindbox-3d': { label: '潮玩盲盒三维', group: '热门写真与设计', description: '明确三维潮玩商品渲染，大头小身体、搪胶材质和影棚陈列。' },
         'cinematic-photo': { label: '电影感摄影', group: '摄影写实', description: '自然光、强对比、专业摄影质感和浅景深。' },
         'medium-format': { label: '中画幅胶片', group: '摄影写实', description: '电影剧照般的中画幅胶片质感，柔和颗粒和柯达色调。' },
         'analog-film': { label: '复古模拟胶片', group: '摄影写实', description: '温暖偏色、轻微暗角、褪色高光和复古胶片颗粒。' },
@@ -115,7 +115,12 @@ jQuery(async function () {
         resolution: '768x512',
         steps: 4,
         autoGenerate: false,
-        stylePreset: 'anime-key-visual'
+        stylePreset: 'anime-key-visual',
+        /* 自动注入内置的绘图指令。
+           原本靠用户自己导入「画图世界书」才能用，但推广时没法发文件，
+           所以把指令内置到插件里直接注入，装上就能用。
+           懂行的用户若已自挂世界书，可在设置里关掉本项。 */
+        injectDrawingInstruction: true
     };
     var contextGetter = function () {
         return window.SillyTavern && window.SillyTavern.getContext
@@ -1231,6 +1236,9 @@ jQuery(async function () {
         renderStylePresetSelect();
         renderResolutionNote();
         updateQueueBadges();
+        /* 内置绘图指令开关 */
+        $('#cpab-inject-instruction').prop('checked', settings.injectDrawingInstruction !== false);
+        applyDrawingInstruction();
         /* 去服务端把自定义画风取回来，追加进下拉框（没卡密时静默跳过） */
         refreshCustomStyles();
     }
@@ -1306,7 +1314,7 @@ jQuery(async function () {
         customStylePresets.forEach(function (preset) {
             stylePresetUi[preset.id] = {
                 label: preset.name,
-                group: '⭐ 我的自定义风格',
+                group: '我的自定义风格',
                 description: preset.description || '你自己保存的画风，点击即用。'
             };
         });
@@ -1534,12 +1542,121 @@ jQuery(async function () {
         settings.stylePreset = normalizeStylePreset(settings.stylePreset);
     }
 
+
+    /* ==================== 内置绘图指令自动注入 ====================
+       作用：让 AI 在正文后输出插件能识别的绘图提示词块。
+       原方案要求用户自己导入「画图世界书」，但推广渠道发不了文件，
+       所以把指令内置进插件，用 ST 的 extension prompt 直接注入，装上即用。
+
+       为什么用注入而不是模拟世界书：
+       注入不改动用户的世界书列表，也不会在用户目录里留文件；
+       而且指令随插件版本走，以后改指令老用户自动生效。
+
+       位置与角色：作者注释同款（IN_CHAT / 深度 1 / SYSTEM）。
+       深度 1 表示插在最后一条用户消息之前，既靠近末尾影响力强，
+       又不会被当成新一轮回复。 */
+    var drawingInstructionCache = null;
+    var drawingInstructionLoading = null;
+    var DRAWING_INSTRUCTION_KEY = 'cpab_drawing_instruction';
+
+    function getExtensionPromptApi() {
+        var context = contextGetter();
+        var types = null;
+        var setPrompt = null;
+        if (context) {
+            types = context.extensionPromptTypes || context.extension_prompt_types || null;
+            setPrompt = typeof context.setExtensionPrompt === 'function' ? context.setExtensionPrompt : null;
+        }
+        /* 老版本 ST 把这两个放在 window 上 */
+        if (!types && typeof window !== 'undefined') types = window.extension_prompt_types || null;
+        if (!setPrompt && typeof window !== 'undefined' && typeof window.setExtensionPrompt === 'function') {
+            setPrompt = window.setExtensionPrompt;
+        }
+        /* 角色枚举同理，拿不到就用字面量 0（SYSTEM） */
+        var roles = null;
+        if (context) roles = context.extensionPromptRoles || context.extension_prompt_roles || null;
+        if (!roles && typeof window !== 'undefined') roles = window.extension_prompt_roles || null;
+        return { types: types, setPrompt: setPrompt, roles: roles };
+    }
+
+    function fetchDrawingInstruction() {
+        if (drawingInstructionCache !== null) return Promise.resolve(drawingInstructionCache);
+        if (drawingInstructionLoading) return drawingInstructionLoading;
+        drawingInstructionLoading = fetch(extensionFolderPath + '/drawing-instruction.txt', { cache: 'no-store' })
+            .then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.text();
+            })
+            .then(function (text) {
+                drawingInstructionCache = String(text || '').trim();
+                return drawingInstructionCache;
+            })
+            .catch(function (error) {
+                console.warn('[' + extensionName + '] 绘图指令读取失败：', error && error.message);
+                drawingInstructionCache = '';
+                return '';
+            })
+            .then(function (value) {
+                drawingInstructionLoading = null;
+                return value;
+            });
+        return drawingInstructionLoading;
+    }
+
+    function clearDrawingInstruction() {
+        var api = getExtensionPromptApi();
+        if (!api.setPrompt || !api.types) return;
+        try { api.setPrompt(DRAWING_INSTRUCTION_KEY, '', api.types.NONE, 0); } catch (error) { /* 忽略 */ }
+    }
+
+    /* 读取指令并按当前开关状态注入。任何一步失败都只是不注入，绝不影响生图。 */
+    async function applyDrawingInstruction() {
+        if (!settings.injectDrawingInstruction) { clearDrawingInstruction(); refreshInstructionStatus(); return; }
+        var api = getExtensionPromptApi();
+        if (!api.setPrompt || !api.types) {
+            console.warn('[' + extensionName + '] 当前酒馆版本不支持 extension prompt，跳过绘图指令注入');
+            refreshInstructionStatus();
+            return;
+        }
+        var instruction = await fetchDrawingInstruction();
+        if (!instruction) { clearDrawingInstruction(); refreshInstructionStatus(); return; }
+        try {
+            var role = api.roles && api.roles.SYSTEM !== undefined ? api.roles.SYSTEM : 0;
+            api.setPrompt(DRAWING_INSTRUCTION_KEY, instruction, api.types.IN_CHAT, 1, false, role);
+        } catch (error) {
+            console.warn('[' + extensionName + '] 绘图指令注入失败：', error && error.message);
+        }
+        refreshInstructionStatus();
+    }
+
+    function refreshInstructionStatus() {
+        var $el = $('#cpab-instruction-status');
+        if (!$el.length) return;
+        if (!settings.injectDrawingInstruction) {
+            $el.text('已关闭：不会自动注入绘图指令，需要你自己挂世界书。').removeClass('is-ok').addClass('is-warn');
+            return;
+        }
+        var api = getExtensionPromptApi();
+        if (!api.setPrompt || !api.types) {
+            $el.text('当前酒馆版本不支持自动注入，请改用世界书方式。').removeClass('is-ok').addClass('is-warn');
+            return;
+        }
+        $el.text('已开启：插件会自动告诉 AI 在正文后输出绘图提示词，无需另外导入世界书。')
+            .removeClass('is-warn').addClass('is-ok');
+    }
+
     function bindSettingsEvents() {
         $('#cpab-style-select').on('change', function () {
             applyStylePresetSelection($(this).val());
         });
         /* 自定义画风区的按钮与输入 */
         bindCustomStyleEvents();
+        // 绘图指令开关：切换后立即生效，不用重启
+        $('#cpab-inject-instruction').on('change', function () {
+            settings.injectDrawingInstruction = $(this).prop('checked');
+            saveSettings();
+            applyDrawingInstruction();
+        });
         // 切换分辨率时立刻刷新消耗提示（高清档慢约 10 秒、扣 2 次）
         $('#cpab-resolution').on('change', function () {
             collectSettingsFromUi();
@@ -1663,6 +1780,7 @@ jQuery(async function () {
             });
             if (eventTypes.CHAT_CHANGED) eventSource.on(eventTypes.CHAT_CHANGED, function () {
                 refreshButtons();
+                applyDrawingInstruction();
                 scheduleAutoGenerate('CHAT_CHANGED');
             });
             if (eventTypes.MESSAGE_SWIPED) eventSource.on(eventTypes.MESSAGE_SWIPED, function () {

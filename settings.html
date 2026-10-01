@@ -78,6 +78,14 @@
         <span>自动识别新楼层的绘画提示词并立即生图（每次会消耗额度）</span>
       </label>
 
+      <label class="checkbox_label" for="cpab-inject-instruction">
+        <input id="cpab-inject-instruction" type="checkbox">
+        <span>自动注入绘图指令（推荐开启）<br>
+          <small>开启后插件会自动告诉 AI 在正文后输出绘图提示词，<b>不需要另外导入世界书</b>。如果你已经自己挂了「画图世界书」，可以关掉本项避免指令重复。</small>
+        </span>
+      </label>
+      <div class="cpab-instruction-status" id="cpab-instruction-status"></div>
+
       <div class="cpab-style-section">
         <div class="cpab-style-head">
           <strong>选择画风</strong>
