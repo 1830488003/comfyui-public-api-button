@@ -1568,6 +1568,21 @@ jQuery(async function () {
     /* 仅供离线测试覆盖，正常运行始终为 null */
     var extensionContextOverride = null;
 
+    /* 酒馆的 extension prompt 枚举值。这两个枚举是公开且固定的：
+         extension_prompt_types = { NONE: -1, IN_PROMPT: 0, IN_CHAT: 1, BEFORE_PROMPT: 2 }
+         extension_prompt_roles = { SYSTEM: 0, USER: 1, ASSISTANT: 2 }
+
+       为什么不从 getContext() 里取：
+       实测当前酒馆版本只在 context 上暴露 setExtensionPrompt 函数，
+       **不暴露** extensionPromptTypes / extension_prompt_types 这两个枚举对象
+       （只有 extensionPrompts 这个数据表）。
+       之前错把「拿不到枚举」当成「不支持自动注入」，结果直接跳过了注入，
+       导致 AI 收不到指令、不输出绘图提示词。所以这里内置常量，
+       同时仍然优先尝试从 context / window 上取真实枚举，取到就用真实值。 */
+    var ST_PROMPT_TYPE_IN_CHAT = 1;
+    var ST_PROMPT_TYPE_NONE = -1;
+    var ST_PROMPT_ROLE_SYSTEM = 0;
+
     function getExtensionPromptApi() {
         var context = extensionContextOverride || contextGetter();
         var types = null;
@@ -1576,16 +1591,27 @@ jQuery(async function () {
             types = context.extensionPromptTypes || context.extension_prompt_types || null;
             setPrompt = typeof context.setExtensionPrompt === 'function' ? context.setExtensionPrompt : null;
         }
-        /* 老版本 ST 把这两个放在 window 上 */
+        /* 老版本 ST 把枚举挂在 window 上 */
         if (!types && typeof window !== 'undefined') types = window.extension_prompt_types || null;
         if (!setPrompt && typeof window !== 'undefined' && typeof window.setExtensionPrompt === 'function') {
             setPrompt = window.setExtensionPrompt;
         }
-        /* 角色枚举同理，拿不到就用字面量 0（SYSTEM） */
         var roles = null;
         if (context) roles = context.extensionPromptRoles || context.extension_prompt_roles || null;
         if (!roles && typeof window !== 'undefined') roles = window.extension_prompt_roles || null;
-        return { types: types, setPrompt: setPrompt, roles: roles };
+
+        /* 支持性只看「有没有 setExtensionPrompt 函数」；
+           枚举取不到就用内置常量兜底，不再因此判定为不支持。 */
+        var supported = typeof setPrompt === 'function';
+        return {
+            supported: supported,
+            setPrompt: setPrompt,
+            types: types,
+            roles: roles,
+            typeInChat: types && types.IN_CHAT !== undefined ? types.IN_CHAT : ST_PROMPT_TYPE_IN_CHAT,
+            typeNone: types && types.NONE !== undefined ? types.NONE : ST_PROMPT_TYPE_NONE,
+            roleSystem: roles && roles.SYSTEM !== undefined ? roles.SYSTEM : ST_PROMPT_ROLE_SYSTEM,
+        };
     }
 
     function fetchDrawingInstruction() {
@@ -1655,16 +1681,16 @@ jQuery(async function () {
 
     function clearDrawingInstruction() {
         var api = getExtensionPromptApi();
-        if (!api.setPrompt || !api.types) return;
-        try { api.setPrompt(DRAWING_INSTRUCTION_KEY, '', api.types.NONE, 0); } catch (error) { /* 忽略 */ }
+        if (!api.supported) return;
+        try { api.setPrompt(DRAWING_INSTRUCTION_KEY, '', api.typeNone, 0); } catch (error) { /* 忽略 */ }
     }
 
     /* 读取指令并注入。任何一步失败都只是不注入，绝不影响生图。 */
     async function applyDrawingInstruction() {
         /* 强制注入：这是插件能拿到提示词的前提，不提供关闭 */
         var api = getExtensionPromptApi();
-        if (!api.setPrompt || !api.types) {
-            console.warn('[' + extensionName + '] 当前酒馆版本不支持 extension prompt，跳过绘图指令注入');
+        if (!api.supported) {
+            console.warn('[' + extensionName + '] 当前酒馆版本没有 setExtensionPrompt，无法自动注入绘图指令');
             refreshInstructionStatus();
             return;
         }
@@ -1673,8 +1699,7 @@ jQuery(async function () {
         var instruction = effectiveInstructionText();
         if (!instruction) { clearDrawingInstruction(); refreshInstructionStatus(); return; }
         try {
-            var role = api.roles && api.roles.SYSTEM !== undefined ? api.roles.SYSTEM : 0;
-            api.setPrompt(DRAWING_INSTRUCTION_KEY, instruction, api.types.IN_CHAT, DRAWING_INSTRUCTION_DEPTH, false, role);
+            api.setPrompt(DRAWING_INSTRUCTION_KEY, instruction, api.typeInChat, DRAWING_INSTRUCTION_DEPTH, false, api.roleSystem);
         } catch (error) {
             console.warn('[' + extensionName + '] 绘图指令注入失败：', error && error.message);
         }
@@ -1685,8 +1710,8 @@ jQuery(async function () {
         var $el = $('#cpab-instruction-status');
         if (!$el.length) return;
         var api = getExtensionPromptApi();
-        if (!api.setPrompt || !api.types) {
-            $el.text('当前酒馆版本不支持自动注入，请改用世界书方式。').removeClass('is-ok').addClass('is-warn');
+        if (!api.supported) {
+            $el.text('当前酒馆版本没有 setExtensionPrompt，无法自动注入绘图指令。').removeClass('is-ok').addClass('is-warn');
             return;
         }
         var usingCustom = !!String(settings.drawingInstruction || '').trim();
