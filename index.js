@@ -1607,13 +1607,25 @@ jQuery(async function () {
         return drawingInstructionLoading;
     }
 
+    /* 指令注入的位置：必须与「画图世界书」的原设置完全一致。
+       世界书那一条是 position=atDepth、depth=0、role=SYSTEM，
+       酒馆内部就是翻译成 IN_CHAT + depth 0 + SYSTEM 注入的
+       （见 world-info.js 里 customDepthWI_{depth}_{role} 的写法，以及
+        script.js 里 setExtensionPrompt(..., IN_CHAT, e.depth, false, e.role)）。
+
+       为什么必须是 depth 0 而不是 1：
+       depth 0 表示插在【最后一条用户消息之后】，也就是整个上下文的最末尾；
+       depth 1 会插在用户最新消息之前，距末尾远一格，模型遵守程度明显变差，
+       实测会导致 AI 不输出绘画提示词块。改为 0 后与世界书行为一致。 */
+    var DRAWING_INSTRUCTION_DEPTH = 0;
+
     function clearDrawingInstruction() {
         var api = getExtensionPromptApi();
         if (!api.setPrompt || !api.types) return;
         try { api.setPrompt(DRAWING_INSTRUCTION_KEY, '', api.types.NONE, 0); } catch (error) { /* 忽略 */ }
     }
 
-    /* 读取指令并按当前开关状态注入。任何一步失败都只是不注入，绝不影响生图。 */
+    /* 读取指令并注入。任何一步失败都只是不注入，绝不影响生图。 */
     async function applyDrawingInstruction() {
         /* 强制注入：这是插件能拿到提示词的前提，不提供关闭 */
         var api = getExtensionPromptApi();
@@ -1626,7 +1638,7 @@ jQuery(async function () {
         if (!instruction) { clearDrawingInstruction(); refreshInstructionStatus(); return; }
         try {
             var role = api.roles && api.roles.SYSTEM !== undefined ? api.roles.SYSTEM : 0;
-            api.setPrompt(DRAWING_INSTRUCTION_KEY, instruction, api.types.IN_CHAT, 1, false, role);
+            api.setPrompt(DRAWING_INSTRUCTION_KEY, instruction, api.types.IN_CHAT, DRAWING_INSTRUCTION_DEPTH, false, role);
         } catch (error) {
             console.warn('[' + extensionName + '] 绘图指令注入失败：', error && error.message);
         }
