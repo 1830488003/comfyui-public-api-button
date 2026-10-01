@@ -361,11 +361,39 @@ jQuery(async function () {
         return 0;
     }
 
+    /* 从多个源读取版本文件，取版本号最高的那个。
+       为什么要多个源：GitHub 的 raw CDN 会按 URL 路径缓存，推送新版本后
+       .../main/manifest.json 可能长时间仍返回旧内容（实测遇到过一直返回上一个
+       版本、X-Cache: HIT 的情况），导致「检查更新」永远发现不了新版本。
+       /refs/heads/main/ 与 jsDelivr 走的是不同的缓存，通常能立刻拿到最新内容。
+       任何一个源成功即可，全部失败才报错。 */
+    function updaterSources(filePath) {
+        var repo = updaterRepoOwner + '/' + updaterRepoName;
+        var bust = '?t=' + Date.now();
+        return [
+            'https://raw.githubusercontent.com/' + repo + '/refs/heads/main/' + filePath + bust,
+            'https://cdn.jsdelivr.net/gh/' + repo + '@main/' + filePath + bust,
+            'https://raw.githubusercontent.com/' + repo + '/main/' + filePath + bust
+        ];
+    }
+
     async function fetchRemoteUpdaterFile(filePath) {
-        var url = 'https://raw.githubusercontent.com/' + updaterRepoOwner + '/' + updaterRepoName + '/main/' + filePath + '?t=' + Date.now();
-        var response = await fetch(url, { cache: 'no-store' });
-        if (!response.ok) throw new Error('GitHub 返回 HTTP ' + response.status);
-        return response.text();
+        var sources = updaterSources(filePath);
+        var lastError = null;
+        /* 按可靠性顺序试，第一个能用的就采用。
+           /refs/heads/main/ 走的是与 /main/ 不同的缓存，实测能立刻拿到刚推送的版本。 */
+        for (var i = 0; i < sources.length; i++) {
+            try {
+                var response = await fetch(sources[i], { cache: 'no-store' });
+                if (!response.ok) { lastError = new Error('HTTP ' + response.status); continue; }
+                var content = await response.text();
+                if (parseManifestVersion(content)) { return content; }
+                lastError = new Error('版本文件内容不合法');
+            } catch (error) {
+                lastError = error;
+            }
+        }
+        throw lastError || new Error('无法读取版本文件，请检查网络');
     }
 
     function renderUpdateState(message) {
