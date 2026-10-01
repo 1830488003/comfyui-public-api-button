@@ -873,6 +873,76 @@ jQuery(async function () {
         return meta && typeof meta === 'object' ? meta : null;
     }
 
+    /* ==================== 图片压缩（保存到酒馆前） ====================
+       服务端返回的是 PNG，720p 常有 1.5~2.5MB，直接存进酒馆会让聊天记录变臃肿、
+       手机上滚楼层也卡。这里转成 JPEG 再上传，画质设得比网页版预览更高（0.90），
+       因为酒馆里点开看大图是常见操作。
+       压缩在浏览器本地完成，不占服务器资源；任何失败都退回原始数据，
+       绝不能让「压缩」把出图流程搞挂。 */
+    var STORE_JPEG_QUALITY = 0.90;
+
+    function compressForStorage(base64Data, format) {
+        return new Promise(function (resolve) {
+            var raw = String(base64Data || '');
+            var fmt = String(format || 'png').toLowerCase();
+            /* 服务端本来就给 JPEG 的就不用再转一次（二次压缩只会掉画质） */
+            if (!raw || fmt === 'jpg' || fmt === 'jpeg') {
+                resolve({ data: raw, format: fmt === 'jpeg' ? 'jpg' : (fmt || 'png') });
+                return;
+            }
+            var settled = false;
+            var finish = function (value) {
+                if (settled) { return; }
+                settled = true;
+                resolve(value);
+            };
+            /* 兜底：3 秒没转完就按原图走，宁可大一点也不能卡住 */
+            var timer = setTimeout(function () {
+                finish({ data: raw, format: fmt || 'png' });
+            }, 3000);
+            try {
+                var image = new Image();
+                image.onload = function () {
+                    try {
+                        var w = image.naturalWidth || image.width;
+                        var h = image.naturalHeight || image.height;
+                        if (!w || !h) { clearTimeout(timer); finish({ data: raw, format: fmt || 'png' }); return; }
+                        var canvas = document.createElement('canvas');
+                        canvas.width = w;
+                        canvas.height = h;
+                        var ctx = canvas.getContext('2d');
+                        if (!ctx) { clearTimeout(timer); finish({ data: raw, format: fmt || 'png' }); return; }
+                        /* 铺白底，避免透明区域在 JPEG 里变黑 */
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, w, h);
+                        ctx.drawImage(image, 0, 0, w, h);
+                        var url = canvas.toDataURL('image/jpeg', STORE_JPEG_QUALITY);
+                        var marker = 'base64,';
+                        var at = url.indexOf(marker);
+                        var b64 = at >= 0 ? url.slice(at + marker.length) : '';
+                        clearTimeout(timer);
+                        if (b64 && b64.length > 64 && b64.length < raw.length) {
+                            var saved = Math.round((1 - b64.length / raw.length) * 100);
+                            console.log('[默默画图] 图片已压缩 ' + raw.length + ' -> ' + b64.length +
+                                ' 字符（省 ' + saved + '%）');
+                            finish({ data: b64, format: 'jpg' });
+                        } else {
+                            finish({ data: raw, format: fmt || 'png' });
+                        }
+                    } catch (error) {
+                        clearTimeout(timer);
+                        finish({ data: raw, format: fmt || 'png' });
+                    }
+                };
+                image.onerror = function () { clearTimeout(timer); finish({ data: raw, format: fmt || 'png' }); };
+                image.src = 'data:image/png;base64,' + raw;
+            } catch (error) {
+                clearTimeout(timer);
+                finish({ data: raw, format: fmt || 'png' });
+            }
+        });
+    }
+
     async function uploadImage(base64Data, format) {
         var context = contextGetter();
         var characterName = String((context && (context.name2 || context.characterName)) || 'ComfyUI-Public').trim();
@@ -1074,7 +1144,10 @@ jQuery(async function () {
         try {
             var data = await apiRequest('/v1/generate', { method: 'POST', body: JSON.stringify(request.payload) });
             setStatus('出图完成，正在保存到酒馆...');
-            var imageUrl = await uploadImage(data.data, data.format || 'png');
+            /* 先压缩再上传：PNG 原图常有 1.5~2.5MB，跨洋隧道传输很慢，
+               转成 JPEG 后体积约为原来的 1/5，聊天记录也更清爽。 */
+            var packed = await compressForStorage(data.data, data.format || 'png');
+            var imageUrl = await uploadImage(packed.data, packed.format);
             var generationMeta = {
                 seed: Number(data.seed),
                 steps: Number(data.steps),
