@@ -82,6 +82,44 @@
       </div>
       <div class="cpab-instruction-status" id="cpab-instruction-status"></div>
 
+      <div class="cpab-instruction-panel">
+        <div class="cpab-instruction-head">
+          <strong><i class="fa-solid fa-pen-to-square"></i> 调整绘图指令</strong>
+          <button id="cpab-instruction-open" class="menu_button" type="button">展开编辑</button>
+        </div>
+        <p class="cpab-instruction-intro">
+          上面那条「绘图指令」就是插件发给 AI 的一段话，用来告诉 AI：<b>正文写完后，在结尾附上一段绘画提示词</b>。
+          插件再从回复里把这段提示词抠出来去生图。<br>
+          所以——<b>这段内容决定 AI 画什么、怎么描述</b>。你可以让它更贴合自己的用法，
+          比如换一种画面侧重、要求更详细或更精简的外貌描写、指定只画某类场景。
+        </p>
+        <details class="cpab-instruction-why">
+          <summary>什么情况下需要改？（点开看例子）</summary>
+          <ul>
+            <li><b>AI 不输出绘画提示词</b>：把「固定输出格式」那一段加强语气，例如把「必须」改成「无论如何都必须」，或把格式示例挪到更靠前的位置。</li>
+            <li><b>画出来的人物和正文不符</b>：在「画面侧重」那一行补充要求，例如强调「必须严格沿用角色卡中的发色与瞳色」。</li>
+            <li><b>提示词太长、生图变慢</b>：删掉不需要的条目（例如多人场景的规则），让 AI 输出更精简。</li>
+            <li><b>只想画特定类型的画面</b>：在末尾的「自定义要求」里写死你的偏好，例如「始终以近景特写为主」。</li>
+            <li><b>用的模型不听话</b>：不同模型对长指令的遵守程度差别很大，可以自己精简或加强措辞。</li>
+          </ul>
+          <p class="cpab-instruction-why-note">
+            标着 <code>{默认}</code> 的地方是推荐写法：留着就用推荐内容，改成你自己的就以你的为准。
+            标着 <code>【可改区域…】</code> 的行只是给你看的提示，发给 AI 时会自动去掉。<br>
+            <b>改坏了不用怕</b>，点「恢复推荐指令」就能还原。
+          </p>
+        </details>
+        <div class="cpab-instruction-editor hidden" id="cpab-instruction-editor">
+          <textarea id="cpab-instruction-text" class="text_pole" rows="16" spellcheck="false"
+            placeholder="这里显示当前生效的指令内容"></textarea>
+          <div class="cpab-instruction-info" id="cpab-instruction-info"></div>
+          <div class="cpab-instruction-msg hidden" id="cpab-instruction-msg"></div>
+          <div class="cpab-instruction-actions">
+            <button id="cpab-instruction-save" class="menu_button" type="button"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+            <button id="cpab-instruction-reset" class="menu_button" type="button"><i class="fa-solid fa-rotate-left"></i> 恢复推荐指令</button>
+          </div>
+        </div>
+      </div>
+
       <div class="cpab-style-section">
         <div class="cpab-style-head">
           <strong>选择画风</strong>

@@ -121,7 +121,10 @@ jQuery(async function () {
            强制开启是为了保证"装上就能用"，避免用户误关后以为插件坏了。 */
         autoGenerate: true,
         stylePreset: 'anime-key-visual',
-        injectDrawingInstruction: true
+        injectDrawingInstruction: true,
+        /* 用户自定义的绘图指令。留空 = 用插件内置的推荐版本。
+           存在扩展设置里，会随酒馆的设置一起保存（开了服务端设置就能跨设备同步）。 */
+        drawingInstruction: ''
     };
     var contextGetter = function () {
         return window.SillyTavern && window.SillyTavern.getContext
@@ -1562,9 +1565,11 @@ jQuery(async function () {
     var drawingInstructionCache = null;
     var drawingInstructionLoading = null;
     var DRAWING_INSTRUCTION_KEY = 'cpab_drawing_instruction';
+    /* 仅供离线测试覆盖，正常运行始终为 null */
+    var extensionContextOverride = null;
 
     function getExtensionPromptApi() {
-        var context = contextGetter();
+        var context = extensionContextOverride || contextGetter();
         var types = null;
         var setPrompt = null;
         if (context) {
@@ -1619,6 +1624,35 @@ jQuery(async function () {
        实测会导致 AI 不输出绘画提示词块。改为 0 后与世界书行为一致。 */
     var DRAWING_INSTRUCTION_DEPTH = 0;
 
+    /* 把指令里的「可改区域」标注处理成最终要发给 AI 的文本。
+       规则：
+         {默认}……{/默认}  —— 括号里是推荐写法。用户没改就原样保留内容，
+                              用户改成别的（甚至删空）就以用户的为准。
+         【可改区域…】这类说明行  —— 只是给用户看的提示，发给 AI 前删掉，
+                                     否则白占 token 还会让模型困惑。 */
+    function resolveInstructionText(rawText) {
+        var text = String(rawText || '');
+        /* 去掉标注行。注意标注行冒号后面还有说明文字，
+           所以不能用「整行只有【…】」来匹配，必须按行首判断。 */
+        text = text
+            .split('\n')
+            .filter(function (line) { return !/^\s*【可改区域/.test(line); })
+            .join('\n');
+        /* 解开 {默认} 标记，保留里面的内容 */
+        text = text.replace(/\{默认\}/g, '').replace(/\{\/默认\}/g, '');
+        /* 收尾：去掉标注行留下的多余空行 */
+        text = text.split('\n').map(function (l) { return l.replace(/\s+$/, ''); }).join('\n')
+            .replace(/\n{3,}/g, '\n\n').trim();
+        return text;
+    }
+
+    /* 读取指令：优先用用户自己改过的版本，没有就用内置文件 */
+    function effectiveInstructionText() {
+        var custom = String(settings.drawingInstruction || '').trim();
+        if (custom) return custom;
+        return resolveInstructionText(drawingInstructionCache || '');
+    }
+
     function clearDrawingInstruction() {
         var api = getExtensionPromptApi();
         if (!api.setPrompt || !api.types) return;
@@ -1634,7 +1668,9 @@ jQuery(async function () {
             refreshInstructionStatus();
             return;
         }
-        var instruction = await fetchDrawingInstruction();
+        /* 先确保内置指令已读到（用户改过的版本在设置里，不需要网络） */
+        await fetchDrawingInstruction();
+        var instruction = effectiveInstructionText();
         if (!instruction) { clearDrawingInstruction(); refreshInstructionStatus(); return; }
         try {
             var role = api.roles && api.roles.SYSTEM !== undefined ? api.roles.SYSTEM : 0;
@@ -1653,8 +1689,89 @@ jQuery(async function () {
             $el.text('当前酒馆版本不支持自动注入，请改用世界书方式。').removeClass('is-ok').addClass('is-warn');
             return;
         }
-        $el.text('运行中：插件会自动告诉 AI 在正文后输出绘图提示词，无需导入世界书。')
+        var usingCustom = !!String(settings.drawingInstruction || '').trim();
+        $el.text('运行中：插件会自动告诉 AI 在正文后输出绘图提示词，无需导入世界书。' +
+            (usingCustom ? '（当前使用你修改过的指令）' : '（当前使用内置推荐指令）'))
             .removeClass('is-warn').addClass('is-ok');
+    }
+
+    /* ---------------- 指令编辑器 ---------------- */
+
+    function instructionWordCount() {
+        var text = String($('#cpab-instruction-text').val() || '');
+        var chinese = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+        var others = text.replace(/[\u4e00-\u9fa5\s]/g, '').length;
+        return { total: text.length, chinese: chinese, others: others };
+    }
+
+    function refreshInstructionEditorInfo() {
+        var $info = $('#cpab-instruction-info');
+        if (!$info.length) return;
+        var n = instructionWordCount();
+        var dirty = String($('#cpab-instruction-text').val() || '').trim() !==
+            String(settings.drawingInstruction || '').trim();
+        var usingCustom = !!String(settings.drawingInstruction || '').trim();
+        $info.text('当前 ' + n.total + ' 字（中文 ' + n.chinese + ' 字）· ' +
+            (usingCustom ? '已自定义' : '内置推荐版') +
+            (dirty ? ' · 有未保存的修改' : ''));
+        $info.removeClass('is-warn');
+        if (dirty) { $info.addClass('is-warn'); }
+    }
+
+    function setInstructionEditorMessage(message, isError) {
+        var $msg = $('#cpab-instruction-msg');
+        if (!$msg.length) return;
+        if (!message) { $msg.addClass('hidden').text(''); return; }
+        $msg.removeClass('hidden').text(String(message));
+        $msg.toggleClass('is-error', !!isError);
+    }
+
+    /* 把内置文件（含可改区域标注）灌进编辑框，方便用户看清哪里能改 */
+    async function loadInstructionIntoEditor() {
+        var $ta = $('#cpab-instruction-text');
+        if (!$ta.length) return;
+        var custom = String(settings.drawingInstruction || '').trim();
+        if (custom) {
+            $ta.val(custom);
+        } else {
+            await fetchDrawingInstruction();
+            $ta.val(drawingInstructionCache || '');
+        }
+        refreshInstructionEditorInfo();
+        setInstructionEditorMessage('');
+    }
+
+    function saveInstructionFromEditor() {
+        var text = String($('#cpab-instruction-text').val() || '').trim();
+        if (!text) {
+            setInstructionEditorMessage('内容不能为空。想恢复推荐写法请点「恢复推荐指令」。', true);
+            return;
+        }
+        if (text.indexOf('[ImagePrompt|') < 0 && text.indexOf('绘画提示词') < 0) {
+            setInstructionEditorMessage('警告：内容里没有出现 [ImagePrompt| 或「绘画提示词」，' +
+                'AI 可能不会输出插件能识别的格式。如果确定要这样用，再点一次保存。', true);
+            if (!window.__cpabInstructionWarned) {
+                window.__cpabInstructionWarned = true;
+                return;
+            }
+        }
+        window.__cpabInstructionWarned = false;
+        settings.drawingInstruction = text;
+        saveSettings();
+        applyDrawingInstruction();
+        refreshInstructionEditorInfo();
+        setInstructionEditorMessage('已保存，下一条回复就会用新指令。', false);
+        showToast('success', '绘图指令已保存');
+    }
+
+    async function resetInstructionToDefault() {
+        if (!window.confirm('恢复成插件内置的推荐指令？你自己改过的内容会被清空。')) return;
+        settings.drawingInstruction = '';
+        saveSettings();
+        await loadInstructionIntoEditor();
+        applyDrawingInstruction();
+        setInstructionEditorMessage('已恢复推荐指令，下一条回复就会生效。', false);
+        showToast('success', '已恢复推荐指令');
     }
 
     function bindSettingsEvents() {
@@ -1663,6 +1780,16 @@ jQuery(async function () {
         });
         /* 自定义画风区的按钮与输入 */
         bindCustomStyleEvents();
+        // 绘图指令编辑器
+        $('#cpab-instruction-save').off('click.cpabInstr').on('click.cpabInstr', saveInstructionFromEditor);
+        $('#cpab-instruction-reset').off('click.cpabInstr').on('click.cpabInstr', resetInstructionToDefault);
+        $('#cpab-instruction-open').off('click.cpabInstr').on('click.cpabInstr', async function () {
+            var $box = $('#cpab-instruction-editor');
+            var willShow = $box.hasClass('hidden');
+            $box.toggleClass('hidden', !willShow);
+            if (willShow) { await loadInstructionIntoEditor(); }
+        });
+        $('#cpab-instruction-text').off('input.cpabInstr').on('input.cpabInstr', refreshInstructionEditorInfo);
 
         // 切换分辨率时立刻刷新消耗提示（高清档慢约 10 秒、扣 2 次）
         $('#cpab-resolution').on('change', function () {

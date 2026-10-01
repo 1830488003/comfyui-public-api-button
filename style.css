@@ -289,6 +289,128 @@
   font-size: 0.92em;
 }
 
+/* 绘图指令编辑器 */
+.cpab-instruction-panel {
+  margin: 4px 0 14px;
+  padding: 12px 13px;
+  border: 1px solid var(--SmartThemeBorderColor, #3a3a3a);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cpab-instruction-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cpab-instruction-head strong {
+  font-size: 0.96em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cpab-instruction-intro {
+  margin: 9px 0 0;
+  font-size: 0.86em;
+  line-height: 1.7;
+  opacity: 0.88;
+}
+
+.cpab-instruction-why {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.16);
+  font-size: 0.85em;
+}
+
+.cpab-instruction-why summary {
+  cursor: pointer;
+  font-weight: 600;
+  outline: none;
+}
+
+.cpab-instruction-why ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  line-height: 1.7;
+}
+
+.cpab-instruction-why li {
+  margin: 5px 0;
+}
+
+.cpab-instruction-why-note {
+  margin: 9px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  line-height: 1.7;
+  opacity: 0.85;
+}
+
+.cpab-instruction-why code {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.94em;
+}
+
+.cpab-instruction-editor {
+  margin-top: 11px;
+}
+
+.cpab-instruction-editor textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 260px;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 0.86em;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.cpab-instruction-info {
+  margin-top: 6px;
+  font-size: 0.82em;
+  opacity: 0.72;
+}
+
+.cpab-instruction-info.is-warn {
+  opacity: 1;
+  color: var(--SmartThemeQuoteColor, #ffb020);
+}
+
+.cpab-instruction-msg {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  line-height: 1.6;
+  border: 1px solid rgba(62, 207, 142, 0.45);
+  background: rgba(62, 207, 142, 0.1);
+}
+
+.cpab-instruction-msg.is-error {
+  border-color: rgba(255, 112, 137, 0.5);
+  background: rgba(255, 112, 137, 0.12);
+  color: #ffd0d9;
+}
+
+.cpab-instruction-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.cpab-instruction-actions .menu_button {
+  flex: 1 1 auto;
+  min-width: 130px;
+}
 /* 强制开启项说明（这两项是插件必需能力，不提供开关） */
 .cpab-always-on {
   margin: 10px 0 4px;
