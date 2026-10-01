@@ -114,12 +114,13 @@ jQuery(async function () {
         installId: '',
         resolution: '768x512',
         steps: 4,
-        autoGenerate: false,
+        /* 以下两项是插件的必需能力，强制开启，不提供关闭入口：
+           - autoGenerate：回复后自动出图。没有它用户得每层手点按钮。
+           - injectDrawingInstruction：告诉 AI 输出绘图提示词。
+             没有它插件根本拿不到提示词，整个插件等于不可用。
+           强制开启是为了保证"装上就能用"，避免用户误关后以为插件坏了。 */
+        autoGenerate: true,
         stylePreset: 'anime-key-visual',
-        /* 自动注入内置的绘图指令。
-           原本靠用户自己导入「画图世界书」才能用，但推广时没法发文件，
-           所以把指令内置到插件里直接注入，装上就能用。
-           懂行的用户若已自挂世界书，可在设置里关掉本项。 */
         injectDrawingInstruction: true
     };
     var contextGetter = function () {
@@ -231,7 +232,12 @@ jQuery(async function () {
     var settings = Object.assign({}, defaultSettings, loadLocalSettings(), extensionSettingsRoot[extensionName]);
     settings.resolution = normalizeResolution(settings.resolution);
     settings.steps = normalizeSteps(settings.steps);
-    settings.autoGenerate = Boolean(settings.autoGenerate);
+    /* 强制开启，并纠正老配置里存的 false：
+       autoGenerate 是插件的主用法（否则用户每层都得手点按钮），
+       injectDrawingInstruction 是插件能拿到绘图提示词的前提。
+       两者被误关会让用户以为插件坏了，所以不提供关闭入口。 */
+    settings.autoGenerate = true;
+    settings.injectDrawingInstruction = true;
     settings.stylePreset = normalizeStylePreset(settings.stylePreset);
     Object.assign(extensionSettingsRoot[extensionName], settings);
 
@@ -278,7 +284,8 @@ jQuery(async function () {
     }
 
     function scheduleAutoGenerate(reason) {
-        if (!settings.autoGenerate || !settings.apiKey) return;
+        /* autoGenerate 强制开启，只需确认有卡密 */
+        if (!settings.apiKey) return;
         if (autoGenerateTimer) clearTimeout(autoGenerateTimer);
         autoGenerateTimer = setTimeout(function () {
             checkAutoGenerate(reason || '').catch(function (error) {
@@ -288,7 +295,7 @@ jQuery(async function () {
     }
 
     async function checkAutoGenerate(reason) {
-        if (!settings.autoGenerate || !settings.apiKey || autoGeneratePollingBusy) return;
+        if (!settings.apiKey || autoGeneratePollingBusy) return;
         autoGeneratePollingBusy = true;
         try {
             var context = contextGetter();
@@ -1232,12 +1239,9 @@ jQuery(async function () {
         $('#cpab-api-key').val(settings.apiKey || '');
         $('#cpab-resolution').val(normalizeResolution(settings.resolution));
         $('#cpab-steps').val(String(normalizeSteps(settings.steps)));
-        $('#cpab-auto-generate').prop('checked', Boolean(settings.autoGenerate));
         renderStylePresetSelect();
         renderResolutionNote();
         updateQueueBadges();
-        /* 内置绘图指令开关 */
-        $('#cpab-inject-instruction').prop('checked', settings.injectDrawingInstruction !== false);
         applyDrawingInstruction();
         /* 去服务端把自定义画风取回来，追加进下拉框（没卡密时静默跳过） */
         refreshCustomStyles();
@@ -1538,7 +1542,7 @@ jQuery(async function () {
         settings.apiKey = String($('#cpab-api-key').val() || '').trim();
         settings.resolution = normalizeResolution($('#cpab-resolution').val());
         settings.steps = normalizeSteps($('#cpab-steps').val());
-        settings.autoGenerate = $('#cpab-auto-generate').is(':checked');
+        settings.autoGenerate = true;   /* 强制开启，见 defaultSettings 注释 */
         settings.stylePreset = normalizeStylePreset(settings.stylePreset);
     }
 
@@ -1611,7 +1615,7 @@ jQuery(async function () {
 
     /* 读取指令并按当前开关状态注入。任何一步失败都只是不注入，绝不影响生图。 */
     async function applyDrawingInstruction() {
-        if (!settings.injectDrawingInstruction) { clearDrawingInstruction(); refreshInstructionStatus(); return; }
+        /* 强制注入：这是插件能拿到提示词的前提，不提供关闭 */
         var api = getExtensionPromptApi();
         if (!api.setPrompt || !api.types) {
             console.warn('[' + extensionName + '] 当前酒馆版本不支持 extension prompt，跳过绘图指令注入');
@@ -1632,16 +1636,12 @@ jQuery(async function () {
     function refreshInstructionStatus() {
         var $el = $('#cpab-instruction-status');
         if (!$el.length) return;
-        if (!settings.injectDrawingInstruction) {
-            $el.text('已关闭：不会自动注入绘图指令，需要你自己挂世界书。').removeClass('is-ok').addClass('is-warn');
-            return;
-        }
         var api = getExtensionPromptApi();
         if (!api.setPrompt || !api.types) {
             $el.text('当前酒馆版本不支持自动注入，请改用世界书方式。').removeClass('is-ok').addClass('is-warn');
             return;
         }
-        $el.text('已开启：插件会自动告诉 AI 在正文后输出绘图提示词，无需另外导入世界书。')
+        $el.text('运行中：插件会自动告诉 AI 在正文后输出绘图提示词，无需导入世界书。')
             .removeClass('is-warn').addClass('is-ok');
     }
 
@@ -1651,12 +1651,7 @@ jQuery(async function () {
         });
         /* 自定义画风区的按钮与输入 */
         bindCustomStyleEvents();
-        // 绘图指令开关：切换后立即生效，不用重启
-        $('#cpab-inject-instruction').on('change', function () {
-            settings.injectDrawingInstruction = $(this).prop('checked');
-            saveSettings();
-            applyDrawingInstruction();
-        });
+
         // 切换分辨率时立刻刷新消耗提示（高清档慢约 10 秒、扣 2 次）
         $('#cpab-resolution').on('change', function () {
             collectSettingsFromUi();
@@ -1671,7 +1666,7 @@ jQuery(async function () {
             collectSettingsFromUi();
             saveSettings();
             refreshButtons();
-            if (settings.autoGenerate) scheduleAutoGenerate('SETTINGS_SAVED');
+            scheduleAutoGenerate('SETTINGS_SAVED');
             try {
                 if (settings.apiKey) await Promise.all([refreshQuota(true), refreshQueueStatus(true)]);
                 setStatus(settings.apiKey ? '设置已保存' : '设置已保存，请点击领取免费50次；用完后加QQ群联系群主购买卡密');
@@ -1796,7 +1791,7 @@ jQuery(async function () {
         setInterval(refreshButtons, 3000);
         setInterval(function () { refreshQueueStatus(true).catch(function () {}); }, 2000);
         setInterval(function () {
-            if (settings.autoGenerate) checkAutoGenerate('POLLING_INTERVAL').catch(function () {});
+            checkAutoGenerate('POLLING_INTERVAL').catch(function () {});
         }, 2000);
     }
 
