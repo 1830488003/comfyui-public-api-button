@@ -1575,7 +1575,9 @@ jQuery(async function () {
         setInstructionEditorMessage: function (m, isError) { setInstructionEditorMessage(m, isError); },
         clearDrawingInstruction: function () { clearDrawingInstruction(); },
         refreshInstructionStatus: function () { refreshInstructionStatus(); },
-        refreshWorldbookStatus: function () { refreshWorldbookStatus(); },
+        refreshWorldbookStatus: function () { return refreshWorldbookStatus(); },
+        /* 动态 import 也走 deps，离线测试才能替换掉 */
+        loadWorldInfoModule: function () { return loadWorldInfoModule(); },
     };
     function deps() {
         return Object.assign({}, WORLDBOOK_DEPS, depsOverride || {});
@@ -1817,10 +1819,41 @@ jQuery(async function () {
         return null;
     }
 
+    /* 用运行时模块写全局启用列表（TavernHelper 不可用时的备用路径） */
+    async function setWorldbookGloballyEnabledViaRuntime(enabled) {
+        try {
+            var mod = await deps().loadWorldInfoModule();
+            var wi = mod && mod.world_info;
+            if (!wi || !Array.isArray(wi.globalSelect)) return { ok: false, reason: 'no-runtime' };
+            var list = wi.globalSelect.map(function (x) { return String(x || ''); }).filter(Boolean);
+            var has = list.indexOf(WORLDBOOK_NAME) >= 0;
+            if (enabled && !has) list.push(WORLDBOOK_NAME);
+            if (!enabled && has) list = list.filter(function (x) { return x !== WORLDBOOK_NAME; });
+            if (has !== enabled) {
+                /* 原地改数组：world_info 是模块级对象，替换整个属性不会同步到各处 */
+                wi.globalSelect.length = 0;
+                list.forEach(function (x) { wi.globalSelect.push(x); });
+                /* 顺带同步 selected_world_info（酒馆内部用它拼提示词） */
+                try {
+                    if (Array.isArray(mod.selected_world_info)) {
+                        mod.selected_world_info.length = 0;
+                        list.forEach(function (x) { mod.selected_world_info.push(x); });
+                    }
+                } catch (error) { /* 只读绑定，忽略 */ }
+                var context = getStContext();
+                if (context && typeof context.saveSettingsDebounced === 'function') context.saveSettingsDebounced();
+                else if (typeof window !== 'undefined' && typeof window.saveSettingsDebounced === 'function') window.saveSettingsDebounced();
+            }
+            return { ok: true, helper: false, active: enabled };
+        } catch (error) {
+            return { ok: false, reason: 'runtime-error', error: error };
+        }
+    }
+
     /* 把「默默画图世界书」加入 / 移出全局启用列表 */
     async function setWorldbookGloballyEnabled(enabled) {
         var helper = await waitForTavernHelper(8, 300);
-        if (!helper) return { ok: false, reason: 'no-helper' };
+        if (!helper) return setWorldbookGloballyEnabledViaRuntime(enabled);
         try {
             var current = await helper.getLorebookSettings();
             var list = (current && current.selected_global_lorebooks) || [];
@@ -1833,7 +1866,9 @@ jQuery(async function () {
             }
             return { ok: true, helper: true, active: enabled };
         } catch (error) {
-            console.warn('[' + extensionName + '] TavernHelper 设置世界书失败：', error && error.message);
+            console.warn('[' + extensionName + '] TavernHelper 设置世界书失败，改用运行时模块：', error && error.message);
+            var fallback = await setWorldbookGloballyEnabledViaRuntime(enabled);
+            if (fallback.ok) return fallback;
             return { ok: false, reason: 'helper-error', error: error };
         }
     }
@@ -1960,7 +1995,7 @@ jQuery(async function () {
             deps().saveSettings();
             deps().clearDrawingInstruction();
             deps().refreshInstructionStatus();
-            deps().refreshWorldbookStatus();
+            await deps().refreshWorldbookStatus();
 
             deps().setInstructionEditorMessage(
                 '已安装世界书「' + WORLDBOOK_NAME + '」。' + notes.join('；') +
@@ -1995,7 +2030,7 @@ jQuery(async function () {
         settings.injectDrawingInstruction = true;
         deps().saveSettings();
         applyDrawingInstruction();
-        deps().refreshWorldbookStatus();
+        await deps().refreshWorldbookStatus();
 
         deps().setInstructionEditorMessage(removed
             ? '已取消全局启用「' + WORLDBOOK_NAME + '」，并恢复内置注入。世界书文件仍保留，可在世界书面板删除。'
@@ -2003,21 +2038,97 @@ jQuery(async function () {
         deps().showToast('success', '已恢复内置注入');
     }
 
-    function isWorldbookActive() {
+    /* 从已保存的酒馆设置里找全局启用的世界书列表。
+       注意：真实的存储位置是 settings.json 的顶层
+           world_info_settings.world_info.globalSelect
+       而不在 extension_settings 下面。插件拿不到 settings.json 那个顶层对象，
+       所以这里只是碰运气，主要靠下面两条路（TavernHelper / 动态 import）。 */
+    function getSavedGlobalSelect() {
         var root = getSettingsRoot();
-        if (root && root.world_info && Array.isArray(root.world_info.globalSelect) &&
-            root.world_info.globalSelect.indexOf(WORLDBOOK_NAME) >= 0) {
-            return true;
+        if (!root) return null;
+        var candidates = [
+            root.world_info_settings && root.world_info_settings.world_info,
+            root.world_info,
+        ];
+        for (var i = 0; i < candidates.length; i++) {
+            var wi = candidates[i];
+            if (wi && Array.isArray(wi.globalSelect)) return wi.globalSelect;
         }
-        /* TavernHelper 的启用列表可能还没同步到 extension_settings，这里只作补充判断 */
-        return false;
+        return null;
     }
 
-    function refreshWorldbookStatus() {
+    /* 动态引入酒馆的 world-info 模块。
+       插件是普通脚本（非 ES 模块），只能用 import() 动态引入。
+       相对路径跟着 index.js 的位置走：
+         .../extensions/third-party/comfyui-public-api-button/index.js
+         ../../../../scripts/world-info.js  ->  .../public/scripts/world-info.js
+       本机另一个扩展 global-prompt-orchestrator 用的是同一条路径。
+
+       读 world_info.globalSelect 而不是 selected_world_info：
+       world_info 是模块级对象常量，不会被整体替换，通过命名空间读到的就是最新值；
+       而 selected_world_info 是 let 变量、会被 setWorldInfoSettings 重新赋值，
+       经命名空间读可能拿到旧数组。 */
+    var worldInfoModulePromise = null;
+    function loadWorldInfoModule() {
+        if (worldInfoModulePromise) return worldInfoModulePromise;
+        worldInfoModulePromise = import('../../../../scripts/world-info.js').catch(function (error) {
+            worldInfoModulePromise = null;   /* 失败不缓存，下次还能重试 */
+            throw error;
+        });
+        return worldInfoModulePromise;
+    }
+
+    /* 读运行时真实的全局启用列表；拿不到返回 null */
+    async function readGlobalSelectFromRuntime() {
+        try {
+            var mod = await deps().loadWorldInfoModule();
+            var wi = mod && mod.world_info;
+            if (wi && Array.isArray(wi.globalSelect)) return wi.globalSelect.slice();
+        } catch (error) {
+            /* 拿不到运行时模块，交给调用方降级 */
+        }
+        return null;
+    }
+
+    /* 问 TavernHelper 要全局启用列表；拿不到返回 null（不抛异常） */
+    async function readGlobalSelectFromHelper() {
+        var helper = getTavernHelper();
+        if (!helper) return null;
+        try {
+            var current = await helper.getLorebookSettings();
+            var list = current && current.selected_global_lorebooks;
+            if (Array.isArray(list)) return list.map(function (x) { return String(x || ''); });
+        } catch (error) {
+            /* helper 出错，交给调用方降级 */
+        }
+        return null;
+    }
+
+    /* 判断世界书是否全局启用。三级来源，逐级降级：
+       1) TavernHelper（由 JS-Slash-Runner 提供，运行时权威）
+       2) 动态 import world-info.js 读 world_info.globalSelect
+       3) 已保存的设置（个别版本可用） */
+    async function isWorldbookActive() {
+        var helperList = await readGlobalSelectFromHelper();
+        if (Array.isArray(helperList)) return helperList.indexOf(WORLDBOOK_NAME) >= 0;
+
+        var runtimeList = await readGlobalSelectFromRuntime();
+        if (Array.isArray(runtimeList)) return runtimeList.indexOf(WORLDBOOK_NAME) >= 0;
+
+        var saved = getSavedGlobalSelect();
+        return Array.isArray(saved) && saved.indexOf(WORLDBOOK_NAME) >= 0;
+    }
+
+    async function refreshWorldbookStatus() {
         var $el = $('#cpab-worldbook-status');
         if (!$el.length) return;
-        var active = isWorldbookActive();
         var injecting = settings.injectDrawingInstruction !== false;
+        var active = false;
+        try {
+            active = await isWorldbookActive();
+        } catch (error) {
+            active = false;
+        }
         var parts = [];
         parts.push(active ? '世界书「' + WORLDBOOK_NAME + '」已全局启用' : '未启用世界书');
         parts.push(injecting ? '内置注入开启' : '内置注入已关闭');
@@ -2078,7 +2189,7 @@ jQuery(async function () {
         // 备用方案：安装 / 取消世界书
         $('#cpab-install-worldbook').off('click.cpabInstr').on('click.cpabInstr', installWorldbook);
         $('#cpab-uninstall-worldbook').off('click.cpabInstr').on('click.cpabInstr', uninstallWorldbook);
-        refreshWorldbookStatus();
+        refreshWorldbookStatus().catch(function () { /* 状态查询失败不影响使用 */ });
 
         // 切换分辨率时立刻刷新消耗提示（高清档慢约 10 秒、扣 2 次）
         $('#cpab-resolution').on('change', function () {

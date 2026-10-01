@@ -1,5 +1,25 @@
 # 默默画图更新日志
 
+## 1.12.1 - 2026-10-01
+
+- **修复世界书启用状态检测不到、一直显示「未启用世界书」**。
+  上一版判断只在 `extension_settings.world_info.globalSelect` 里找，
+  但酒馆真实存储位置是 `settings.json` **顶层**的
+  `world_info_settings.world_info.globalSelect`，
+  插件在浏览器里拿不到那个顶层对象，所以永远读不到、状态显示错误。
+- 现在改成**三级降级读取**，尽量拿到真实状态：
+  1. `TavernHelper.getLorebookSettings()`（由 JS-Slash-Runner 提供，运行时权威）
+  2. **动态 `import()` 引入酒馆的 `world-info.js`**，读 `world_info.globalSelect`
+     （路径 `../../../../scripts/world-info.js`，与本机 `global-prompt-orchestrator` 用的是同一条）
+  3. 已保存的设置（个别版本可用）
+- 读 `world_info.globalSelect` 而不是 `selected_world_info`：
+  前者是模块级对象常量、不会被整体替换，通过模块命名空间读到的就是最新值；
+  后者是 `let` 变量、会被 `setWorldInfoSettings` 重新赋值，经命名空间读可能拿到旧数组。
+- **「取消并恢复内置注入」现在也能可靠移除**：新增运行时写入路径
+  （直接改 `world_info.globalSelect` 原地同步 + 同步 `selected_world_info` + 保存设置），
+  在没有 TavernHelper 的环境里也能生效。
+- 状态刷新改为异步，调用处都补了 `await` / `catch`，不会产生未处理的 Promise 异常。
+
 ## 1.12.0 - 2026-10-01
 
 - **新增备用方案：一键安装为世界书**。
