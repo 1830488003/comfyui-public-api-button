@@ -461,6 +461,15 @@ jQuery(async function () {
        这个判断以前出过 bug（查错了 extension_types 的键格式），
        导致"立即更新"报 Directory does not exist。
        显示出来之后，一眼就能看出判断对不对。 */
+    /* 判断错误是不是"服务器上没装 git"。
+       酒馆的扩展安装/更新底层全是 simple-git，服务器（尤其是安卓 App）没有 git 时
+       会抛 spawn git ENOENT，酒馆只会回一句 Internal Server Error，用户完全看不懂。 */
+    function isGitMissingError(text) {
+        var t = String(text || '');
+        return t.indexOf('ENOENT') >= 0 || t.indexOf('spawn git') >= 0
+            || t.indexOf('Internal Server Error') >= 0;
+    }
+
     function renderInstallInfo() {
         var $el = $('#cpab-install-info');
         if (!$el.length) return;
@@ -634,6 +643,23 @@ jQuery(async function () {
                     return (a.global ? '全局' : '用户') + '模式 → HTTP ' + a.status + '：'
                         + String(a.text || '').replace(/\s+/g, ' ').slice(0, 120);
                 }).join(' ｜ ');
+
+                /* 如果看起来是"服务器没装 git"，直接给出人话解释和出路，
+                   因为酒馆只会回一句 Internal Server Error，用户根本不知道该怎么办。 */
+                var allText = attempts.map(function (a) { return String(a.text || ''); }).join(' ');
+                if (isGitMissingError(allText)) {
+                    throw new Error(
+                        '这台酒馆的服务器上没有 git，所以无法用「立即更新」升级。\n\n' +
+                        '原因：酒馆的扩展安装/更新功能底层调用的是 git 命令，' +
+                        '服务器（尤其是安卓 App / Termux 环境）没装 git 时会报 ' +
+                        'spawn git ENOENT，酒馆只会笼统地回一句 Internal Server Error。\n\n' +
+                        '三种出路（任选其一）：\n' +
+                        '1. 在这台服务器上装 git（Termux 里执行 pkg install git），装完重开酒馆；\n' +
+                        '2. 在电脑上打开酒馆和这个扩展，用电脑的「立即更新」升级（电脑装了 git 就能成功）；\n' +
+                        '3. 直接用网页版画图，不需要这个插件：https://draw.410847381.xyz\n\n' +
+                        '（原始返回：' + detail + '）'
+                    );
+                }
                 throw new Error(detail || '更新接口没有返回成功');
             }
 

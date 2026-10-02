@@ -743,6 +743,11 @@
   margin-top: 7px;
   color: var(--SmartThemeBodyColor, #bbb);
   font-size: 0.88em;
+  /* 更新失败时我们会输出多行说明（例如"这台服务器没装 git"），
+     默认的 white-space 会把换行折叠成空格、挤成一坨看不清。 */
+  white-space: pre-line;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .cpab-update-panel.has-update {
