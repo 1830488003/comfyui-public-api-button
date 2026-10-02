@@ -135,6 +135,7 @@ jQuery(async function () {
     extensionSettingsRoot[extensionName] = extensionSettingsRoot[extensionName] || {};
     var lastQueueAhead = 0;
     var lastKnownQuota = null;
+    var lastQuotaFetchedAt = null;
     var queueState = 'offline';
     var queuePollBusy = false;
     var trialClaimPromise = null;
@@ -844,12 +845,26 @@ jQuery(async function () {
         if (!quota) return '额度数据为空';
         var name = quota.name ? '【' + quota.name + '】 ' : '';
         if (quota.plan_type === 'credits') {
-            return name + '次数卡：剩余 ' + quota.remaining + ' / ' + quota.total + ' 次，已使用 ' + quota.used + ' 次';
+            return name + '次数卡：剩余 ' + quota.remaining + ' / ' + quota.total + ' 次，已使用 '
+                + quota.used + ' 次' + quotaFetchedSuffix();
         }
         if (!quota.activated) {
-            return name + '时长卡：未激活；首次成功出图后开始计算 ' + quota.duration_days + ' 天';
+            return name + '时长卡：未激活；首次成功出图后开始计算 ' + quota.duration_days + ' 天'
+                + quotaFetchedSuffix();
         }
-        return name + '时长卡：剩余约 ' + quota.days_remaining + ' 天；到期时间 ' + formatDate(quota.expires_at);
+        return name + '时长卡：剩余约 ' + quota.days_remaining + ' 天；到期时间 '
+            + formatDate(quota.expires_at) + quotaFetchedSuffix();
+    }
+
+    /* 额度是什么时候查的。
+       没有这个时间，用户过一会儿再看就分不清屏幕上的数字是新查的还是旧的。
+       变量本身在文件上方统一声明（lastQuotaFetchedAt）。 */
+    function quotaFetchedSuffix() {
+        if (!lastQuotaFetchedAt) return '';
+        var d = new Date(lastQuotaFetchedAt);
+        var hh = String(d.getHours()).padStart(2, '0');
+        var mm = String(d.getMinutes()).padStart(2, '0');
+        return '（' + hh + ':' + mm + ' 查询）';
     }
 
     async function refreshQuota(silent) {
@@ -858,6 +873,7 @@ jQuery(async function () {
         try {
             var data = await apiRequest('/v1/quota', { method: 'GET' });
             lastKnownQuota = data.quota;
+            lastQuotaFetchedAt = Date.now();
             $quota.removeClass('is-idle is-error').addClass('is-ok').text(formatQuota(data.quota));
             handleQuotaNotice(data.quota);
             renderResolutionNote();
