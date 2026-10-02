@@ -1,5 +1,23 @@
 # 默默画图更新日志
 
+## 1.12.5 - 2026-10-01
+
+- **修复「立即更新」报错 `Directory does not exist at data/default-user/extensions/...`**。
+  根因：插件判断自己是"全局扩展"还是"用户扩展"时查错了键。
+  酒馆前端的 `extensionTypes` 用的是**带前缀的键**，例如
+  `'third-party/comfyui-public-api-button'`，而插件只拿
+  `'comfyui-public-api-button'` 去查，查不到就得到 `undefined`，
+  被当成"用户扩展"，服务端于是去 `data/default-user/extensions/` 找，
+  可插件实际装在 `public/scripts/extensions/third-party/`，所以报目录不存在。
+  现在改成三级匹配（精确 → 带 `third-party/` 前缀 → 后缀匹配），
+  与酒馆内部的 `getExtensionType` 规则一致。
+- 另外查明：服务端会用 `sanitize-filename` 处理扩展名，**它会把斜杠去掉**。
+  所以请求里的 `extensionName` 必须用**短名**，不能带 `third-party/`，
+  否则路径会拼成 `third-partycomfyui-public-api-button`。已在代码里注明。
+- 服务端侧还需要一个前提：**酒馆进程能访问 GitHub**。
+  本机通过代理上网，已给 git 配置代理（见项目说明书），
+  否则 `/api/extensions/update` 会因 `git fetch` 失败而返回 500。
+
 ## 1.12.4 - 2026-10-01
 
 - **修复「检查更新」有时候检查不到新版本**。

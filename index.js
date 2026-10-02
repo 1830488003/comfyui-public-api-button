@@ -515,6 +515,37 @@ jQuery(async function () {
         }
     }
 
+    /* 判断扩展是 global（装在 public/scripts/extensions/third-party/，所有用户共享）
+       还是 local（装在 data/<user>/extensions/）。这两个值直接决定服务端去哪个目录找，
+       传错就会报 "Directory does not exist at ..."。
+
+       坑：
+       1) 酒馆前端的 extensionTypes 用【带前缀】的键，例如
+          'third-party/comfyui-public-api-button' → 'global'
+          而本插件的 extensionName 只是 'comfyui-public-api-button'，
+          直接 extensionTypes[extensionName] 拿不到，会得到 undefined 当成 local。
+          所以这里除了精确匹配，还要按后缀匹配（和酒馆内部的 getExtensionType 一致）。
+       2) 服务端 /update 会用 sanitize-filename 处理 extensionName，
+          **它会把斜杠去掉**！所以请求里的 extensionName 千万别带 'third-party/'，
+          否则路径会变成 'third-partycomfyui-public-api-button'。 */
+    function resolveExtensionType() {
+        var context = contextGetter();
+        var extensions = context && context.extensions ? context.extensions : {};
+        var types = (extensions && extensions.extension_types) || window.extension_types || {};
+        // 精确匹配
+        if (types[extensionName]) return types[extensionName];
+        // 带 third-party/ 前缀的键
+        if (types['third-party/' + extensionName]) return types['third-party/' + extensionName];
+        // 后缀匹配（酒馆自己就是这么找的）
+        var keys = Object.keys(types);
+        for (var i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf('third-party') === 0 && keys[i].slice(-extensionName.length) === extensionName) {
+                return types[keys[i]];
+            }
+        }
+        return '';
+    }
+
     async function performExtensionUpdate() {
         if (updaterState.updating) return;
         updaterState.updating = true;
@@ -524,14 +555,16 @@ jQuery(async function () {
             var common = context && context.common ? context.common : context;
             var extensions = context && context.extensions ? context.extensions : {};
             var getRequestHeaders = common && common.getRequestHeaders;
-            var extensionTypes = extensions && extensions.extension_types ? extensions.extension_types : (window.extension_types || {});
             if (typeof getRequestHeaders !== 'function') throw new Error('当前酒馆版本未提供扩展更新接口');
+            /* 注意 extensionName 用【不带前缀的短名】，
+               带 'third-party/' 会被服务端 sanitize 去掉斜杠导致路径拼错。 */
+            var isGlobal = resolveExtensionType() === 'global';
             var response = await fetch('/api/extensions/update', {
                 method: 'POST',
                 headers: getRequestHeaders(),
                 body: JSON.stringify({
                     extensionName: extensionName,
-                    global: extensionTypes[extensionName] === 'global'
+                    global: isGlobal
                 })
             });
             if (!response.ok) throw new Error((await response.text()) || ('HTTP ' + response.status));
