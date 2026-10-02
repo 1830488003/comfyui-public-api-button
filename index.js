@@ -9,6 +9,8 @@ jQuery(async function () {
     // 固定域名。与公告 Worker 的 FIXED_DOMAINS 白名单保持一致，
     // 改动其中一边时另一边也要同步改（WORKER: endpoint-registry/worker.js）。
     var apiUrlWhitelist = ['draw.410847381.xyz'];
+    /* 固定域名。公告服务连不上时用它兜底，保证出图不受影响。 */
+    var DEFAULT_API_URL = 'https://draw.410847381.xyz';
     var updaterRepoOwner = '1830488003';
     var updaterRepoName = 'comfyui-public-api-button';
     var storageKey = 'comfyui_public_api_button_settings';
@@ -527,9 +529,16 @@ jQuery(async function () {
                 if (isManual) showToast('success', '当前已是最新版本 v' + updaterState.currentVersion);
             }
         } catch (error) {
-            renderUpdateState('检查更新失败，可稍后点击重试：' + (error.message || error));
-            if (isManual) showToast('error', '检查更新失败：' + (error.message || error));
-            else console.warn('[' + extensionName + '] automatic update check failed', error);
+            /* 检查更新要连 GitHub，连不上是常事（尤其国内网络），
+               而且【完全不影响画图】。所以自动检查失败时只说"暂不可用"，
+               别用"失败"两个字吓用户，也不弹提示。 */
+            if (isManual) {
+                renderUpdateState('检查更新失败，可稍后点击重试：' + (error.message || error));
+                showToast('error', '检查更新失败：' + (error.message || error));
+            } else {
+                renderUpdateState('版本检查暂不可用（不影响画图），点「检查更新」可重试');
+                console.warn('[' + extensionName + '] automatic update check failed', error);
+            }
         } finally {
             updaterState.checking = false;
             renderUpdateState($('#cpab-update-status').text());
@@ -887,8 +896,20 @@ jQuery(async function () {
     }
 
     async function requireConnectionSettings() {
-        await refreshDiscoveredApiUrl(false, true);
-        var apiUrl = requireApiUrl();
+        /* 【关键】公告服务（Cloudflare Worker）只用来"看看有没有换地址"。
+           我们已经有固定域名 draw.410847381.xyz，所以它连不上也不该影响出图。
+
+           以前这里是 `await refreshDiscoveredApiUrl(false, true)`，它会抛异常，
+           而异常会沿着这里往上冒，直接把出图/领额度打断——表现就是
+           "网络没问题但就是画不出来"。现在改成【尽力而为】：
+           拿得到新地址就用新的，拿不到就用已保存的地址继续。 */
+        try {
+            await refreshDiscoveredApiUrl(false, true);
+        } catch (error) {
+            console.warn('[' + extensionName + '] 公告服务不可用，改用已保存的服务器地址：', error && error.message);
+        }
+        var apiUrl = normalizeApiUrl(settings.apiUrl) || DEFAULT_API_URL;
+        if (!/^https?:\/\//i.test(apiUrl)) throw new Error('服务器地址无效，请在设置里重新获取');
         var apiKey = String(settings.apiKey || '').trim();
         if (!apiKey) throw new Error('请先点击“领取免费50次”；免费额度用完后，请加QQ群联系群主购买卡密');
         return { apiUrl: apiUrl, apiKey: apiKey };
