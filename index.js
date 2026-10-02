@@ -2260,9 +2260,11 @@ jQuery(async function () {
             URL.revokeObjectURL(url);
 
             deps().setInstructionEditorMessage(
-                '已下载「' + fileName + '」。把它导入酒馆的世界书面板（顶部 🌐 图标 → 导入），'
-                + '再在「已启用的世界（全局有效）」里选上它，就能生效了。', false);
-            deps().showToast('success', '世界书已下载：' + fileName);
+                '已下载「' + fileName + '」。接下来两步都不能少：'
+                + '① 酒馆顶部 🌐 图标 → 世界书面板 → 点「导入」选中这个文件；'
+                + '② 【关键】在「已启用的世界（全局有效）」下拉框里选中「' + WORLDBOOK_NAME + '」——'
+                + '只导入不挂载是没用的，必须挂成全局世界书才会生效。', false);
+            deps().showToast('success', '世界书已下载，记得挂载成全局世界书才会生效');
         } catch (error) {
             deps().setInstructionEditorMessage(
                 '下载失败：' + (error && error.message ? error.message : error)
