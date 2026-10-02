@@ -337,6 +337,8 @@ jQuery(async function () {
                 setStatus('自动生图失败，15秒后重试：' + (error.message || error));
                 if (Number(error.status) === 402 || /次数已用完|卡密已过期/.test(String(error.message || ''))) {
                     showPurchaseNotice(true);
+                } else if (Number(error.status) === 403 && isIpLockedError(error.message)) {
+                    if (!ipLockedNoticeShown) { ipLockedNoticeShown = true; showIpLockedNotice(); }
                 }
                 console.warn('[' + extensionName + '] automatic generation error (' + (reason || 'poll') + ')', error);
             } finally {
@@ -531,6 +533,34 @@ jQuery(async function () {
             purchaseNoticeShown = false;
         }
     }
+    /* 月卡换设备被拒时的提示。
+       服务端返回的是「此卡密已在其他设备激活，请重新购买」，
+       但用户在别的网络下看到这句只会以为卡坏了，所以额外说清原因和解决办法。 */
+    var ipLockedNoticeShown = false;
+
+    function isIpLockedError(message) {
+        var text = String(message || '');
+        return text.indexOf('已在其他设备激活') >= 0 || text.indexOf('请在原设备使用') >= 0;
+    }
+
+    function showIpLockedNotice() {
+        var message = '这张月卡已经绑定到另一台设备（或另一个网络）了。\n\n' +
+            '月卡为了防分享，会记住第一次使用时的网络地址，换设备或换网络会被拒绝。\n\n' +
+            '如果你是自己换了手机 / 换了宽带 / 从 WiFi 切到流量，' +
+            '请联系群主说明情况，让他在后台点一下「解绑IP」就能恢复。\n\n' +
+            'QQ群1：118774271\nQQ群2：705941358';
+        if (window.toastr && window.toastr.warning) {
+            window.toastr.warning(message.replace(/\n/g, '<br>'), '卡密已在其他设备激活', {
+                closeButton: true,
+                timeOut: 0,
+                extendedTimeOut: 0,
+                escapeHtml: false
+            });
+        } else {
+            window.alert(message);
+        }
+    }
+
     function showTrialAlreadyClaimedNotice() {
         var message = '本机已经领取过免费50次额度，需要更多额度请联系群主购买。\n\n5元：500次\n10元：1200次\n20元：包月不限额\n\nQQ群1：118774271\nQQ群2：705941358';
         if (window.toastr && window.toastr.warning) {
@@ -1231,7 +1261,11 @@ jQuery(async function () {
             setButtonState($button, 'is-error', '生图失败，点击重试');
             setStatus('生图失败：' + (error.message || error));
             showToast('error', error.message || String(error));
-            if (Number(error.status) === 402 || /次数已用完|卡密已过期/.test(String(error.message || ''))) showPurchaseNotice(true);
+            if (Number(error.status) === 402 || /次数已用完|卡密已过期/.test(String(error.message || ''))) {
+                showPurchaseNotice(true);
+            } else if (Number(error.status) === 403 && isIpLockedError(error.message)) {
+                if (!ipLockedNoticeShown) { ipLockedNoticeShown = true; showIpLockedNotice(); }
+            }
             refreshQuota(true).catch(function () {});
             refreshQueueStatus(true).catch(function () {});
         }
