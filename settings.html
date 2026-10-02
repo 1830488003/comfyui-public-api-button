@@ -23,9 +23,9 @@
             </div>
             <div class="cpab-intro">
                 <div class="cpab-section-title">使用说明</div>
-                <div>填写网址和卡密并保存，安装并挂载提供的画图世界书。AI 回复生成“绘画提示词”后，楼层里会出现生图按钮，点击即可画图。</div>
+                <div>填写卡密并保存即可，<b>不需要另外导入世界书</b>（插件已内置绘图指令）。之后正常聊天，AI 回复里会带上绘图提示词，插件会自动出图。</div>
             </div>
-      <p class="cpab-help">插件启动会自动获取最新服务器地址。新用户点击“领取免费50次”后，卡密会自动填写；免费额度用完后，请加上面的QQ群，联系群主购买卡密，再粘贴到“卡密”输入框中。</p>
+      <p class="cpab-help">插件启动会自动获取最新服务器地址。<b>新用户点下面的「领取免费50次」</b>，卡密会自动填进上面的输入框并保存，不用手动复制。免费额度用完后，请加上面的QQ群联系群主购买卡密，用「粘贴新卡密」贴进来即可。</p>
 
       <label for="cpab-api-url">服务器地址（自动获取）</label>
       <input id="cpab-api-url" class="text_pole" type="url" placeholder="插件启动后自动获取" readonly>
@@ -35,6 +35,16 @@
         <input id="cpab-api-key" class="text_pole" type="password" autocomplete="off" placeholder="免费50次自动填写；用完请联系群主购买卡密">
         <button id="cpab-toggle-key" class="menu_button" type="button" title="显示或隐藏卡密"><i class="fa-solid fa-eye"></i></button>
       </div>
+
+      <div class="cpab-actions">
+        <button id="cpab-claim-trial" class="menu_button" type="button"><i class="fa-solid fa-gift"></i> 领取免费50次</button>
+        <button id="cpab-save" class="menu_button" type="button"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
+        <button id="cpab-check-quota" class="menu_button" type="button"><i class="fa-solid fa-arrows-rotate"></i> 查询额度</button>
+      </div>
+
+      <div id="cpab-quota" class="cpab-quota is-idle">尚未查询额度</div>
+      <div id="cpab-queue-status" class="cpab-server-queue is-offline">服务器队列：队列离线</div>
+      <div id="cpab-status" class="cpab-status">就绪</div>
 
       <div class="cpab-recharge">
         <div class="cpab-recharge-head">
@@ -175,27 +185,15 @@
         <div class="cpab-custom-note">保存后会自动加进上面的「选择画风」下拉框，并立即切换过去。<b>网页版和酒馆插件都能选用</b>，跟卡密绑定，换电脑也还在。</div>
       </div>
 
-      <div class="cpab-actions">
-        <button id="cpab-claim-trial" class="menu_button" type="button"><i class="fa-solid fa-gift"></i> 领取免费50次</button>
-        <button id="cpab-save" class="menu_button" type="button"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
-        <button id="cpab-check-quota" class="menu_button" type="button"><i class="fa-solid fa-arrows-rotate"></i> 查询额度</button>
-      </div>
-
-      <div id="cpab-quota" class="cpab-quota is-idle">尚未查询额度</div>
-      <div id="cpab-queue-status" class="cpab-server-queue is-offline">服务器队列：队列离线</div>
-      <div id="cpab-status" class="cpab-status">就绪</div>
       <p class="cpab-security">卡密仅保存在当前浏览器设置中；每次生成、额度和排队状态均由服务端校验。</p>
     
     <details class="cpab-tutorial">
                     <summary>教程</summary>
                     <ol class="cpab-tutorial-steps">
-                        <li>安装提供的画图世界书，在当前角色中挂载世界书，并启用“画图中文”。</li>
-                    </ol>
-                    <img class="cpab-tutorial-image" src="/scripts/extensions/third-party/comfyui-public-api-button/assets/tutorial-worldbook.png" alt="挂载画图世界书并启用画图中文">
-                    <ol class="cpab-tutorial-steps" start="2">
-                        <li>正常对话，让 AI 回复生成“绘画提示词”。</li>
-                        <li>先在“画风增强”中选择一种风格，插件会自动把风格前缀和后缀拼接到画面提示词中，并保存选择。</li>
-                        <li>楼层出现三个生图按钮后，可以点击按钮画图；也可以在设置中开启“自动识别新楼层并立即生图”。</li>
+                        <li>装好插件、填上卡密就完事了，<b>不需要另外导入世界书</b>。</li>
+                        <li>正常对话，AI 回复末尾会自动带上“绘画提示词”。</li>
+                        <li>插件会自动识别并出图，图片直接插进楼层；你也可以点楼层里的按钮手动重画。</li>
+                        <li>想换画风就在下面「选择画风」里挑一个，会自动记住。</li>
                     </ol>
                     <img class="cpab-tutorial-image" src="/scripts/extensions/third-party/comfyui-public-api-button/assets/tutorial-buttons.png" alt="绘画提示词、三个生图按钮和排队任务数">
                 </details>

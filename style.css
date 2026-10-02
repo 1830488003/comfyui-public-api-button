@@ -218,10 +218,44 @@
 }
 
 .cpab-key-row,
-.cpab-actions {
+/* ============================================================
+   按钮防"竖排"
+   ------------------------------------------------------------
+   病根：按钮所在容器是 display:flex，但按钮没有限制收缩，
+   窗口一窄按钮就被压扁，中文会逐字换行 → 看起来是竖排的。
+   修法三点：
+     1. flex-shrink:0  —— 不许被压缩，宁可换行到下一排
+     2. white-space:nowrap —— 中文也不许在按钮内部断行
+     3. word-break:keep-all —— 双保险（部分浏览器对 CJK 的处理）
+   ============================================================ */
+.cpab-panel .menu_button,
+.cpab-panel button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+/* 按钮行：整体可换行，但每个按钮保持完整 */
+.cpab-key-row,
+.cpab-actions,
+.cpab-recharge-actions,
+.cpab-custom-actions,
+.cpab-instruction-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 允许"占满剩余宽度"的按钮，但宽度绝不低于内容所需。
+   注意：不能用 flex-shrink:0 —— flex: 1 1 auto 是简写，会把它重置掉。
+   用 min-width: max-content 才是可靠的做法：
+   按钮宁可换到下一排，也不会被压窄到让文字换行。 */
+.cpab-recharge-actions .menu_button,
+.cpab-custom-actions .menu_button,
+.cpab-instruction-actions .menu_button {
+  flex: 1 1 auto;
+  min-width: max-content;
 }
 
 .cpab-key-row .text_pole {
@@ -230,13 +264,13 @@
 
 .cpab-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px;
+  /* 窄面板下第二列自适应，避免把"步数"下拉框压变形 */
+  grid-template-columns: minmax(0, 1fr) minmax(72px, 110px);
   gap: 10px;
 }
 
 .cpab-actions {
   margin-top: 12px;
-  flex-wrap: wrap;
 }
 
 .cpab-style-section {
