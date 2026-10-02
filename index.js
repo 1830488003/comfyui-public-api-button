@@ -617,10 +617,15 @@ jQuery(async function () {
             '酒馆的「更新扩展」底层要用服务器上的 <code>git</code> 命令。',
             '有些环境（比如安卓版酒馆）没有 git，酒馆就会报 ',
             '<code>Internal Server Error</code>，插件没法自己升级。</p>',
-            '<p><b>操作步骤（30 秒）：</b></p>',
+            '<p style="background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.45);border-radius:6px;padding:8px 10px;margin:8px 0">',
+            '<b>⚠️ 必须先删掉旧版，再装新版。</b><br>',
+            '不删直接安装会报「目录已存在」装不上。',
+            '</p>',
+            '<p><b>操作步骤（约 1 分钟）：</b></p>',
             '<ol style="padding-left:20px;margin:6px 0">',
             '<li>把下面这个网址复制好 ' + copyHint + '</li>',
-            '<li>在酒馆里打开 <b>扩展</b> 面板 → 点 <b>「安装扩展」</b></li>',
+            '<li>在酒馆里打开 <b>扩展</b> 面板，找到 <b>「默默画图」</b>，点它右边的 <b>删除（垃圾桶图标）</b>，确认删掉</li>',
+            '<li>在同一个面板里点 <b>「安装扩展」</b></li>',
             '<li>把网址粘进输入框 → 点 <b>「Install just for me」</b>（只为我安装）</li>',
             '<li>装完 <b>重载酒馆页面</b>，就完成更新了</li>',
             '</ol>',
@@ -628,8 +633,13 @@ jQuery(async function () {
             '<code style="flex:1 1 240px;overflow-wrap:anywhere">' + EXTENSION_REPO_URL + '</code>',
             '<i class="fa-solid fa-copy" style="cursor:pointer" title="再复制一次"></i>',
             '</p>',
-            '<p style="opacity:.7;font-size:.9em;margin-top:8px">',
-            '如果提示「目录已存在」，先在上面那个面板里把「默默画图」删掉，再重新安装即可。',
+            '<p style="opacity:.75;font-size:.9em;margin-top:8px">',
+            '<b>删掉插件会不会丢东西？</b>不会。卡密、画风这些都在服务器和你自己的设置里，',
+            '重装后打开设置面板会自动读回来，不用重新填。',
+            '</p>',
+            '<p style="opacity:.75;font-size:.9em">',
+            '如果你之前挂过「默默画图世界书」，重装后可以不管它；',
+            '也可以顺手把它也删掉——新版插件已经内置绘图指令，不需要世界书了。',
             '</p>',
             '</div>',
         ].join('');
@@ -657,7 +667,7 @@ jQuery(async function () {
         renderUpdateState('正在准备手动安装指引...');
         try {
             await showManualInstallGuide();
-            renderUpdateState('已给出安装网址。用酒馆的「安装扩展」粘贴该网址即可更新到 v' + updaterState.latestVersion + '。');
+            renderUpdateState('已复制网址。更新到 v' + updaterState.latestVersion + ' 的步骤：先删掉旧的「默默画图」，再用「安装扩展」粘贴该网址安装。');
         } catch (error) {
             renderUpdateState('无法打开指引：' + (error && error.message ? error.message : error));
         } finally {
