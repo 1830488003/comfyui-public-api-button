@@ -4,8 +4,6 @@ jQuery(async function () {
 
     var extensionName = 'comfyui-public-api-button';
     var extensionFolderPath = '/scripts/extensions/third-party/' + extensionName;
-    var endpointDiscoveryUrl = 'https://momo-draw-endpoint.1830488003.workers.dev/v1/endpoint';
-    var endpointDiscoveryIntervalMs = 30000;
     // 固定域名。与公告 Worker 的 FIXED_DOMAINS 白名单保持一致，
     // 改动其中一边时另一边也要同步改（WORKER: endpoint-registry/worker.js）。
     var apiUrlWhitelist = ['draw.410847381.xyz'];
@@ -142,8 +140,6 @@ jQuery(async function () {
     var queuePollBusy = false;
     var trialClaimPromise = null;
     var purchaseNoticeShown = false;
-    var endpointDiscoveryPromise = null;
-    var lastEndpointDiscoveryAt = 0;
     var autoGenerateTimer = null;
     var autoGeneratePollingBusy = false;
     var autoGenerateInFlight = new Set();
@@ -789,44 +785,6 @@ jQuery(async function () {
     }
 
 
-    async function refreshDiscoveredApiUrl(force, silent) {
-        var now = Date.now();
-        if (!force && normalizeApiUrl(settings.apiUrl) && now - lastEndpointDiscoveryAt < endpointDiscoveryIntervalMs) {
-            return normalizeApiUrl(settings.apiUrl);
-        }
-        if (endpointDiscoveryPromise) return endpointDiscoveryPromise;
-        endpointDiscoveryPromise = (async function () {
-            var response;
-            try {
-                response = await fetch(endpointDiscoveryUrl + '?t=' + Date.now(), { method: 'GET', cache: 'no-store' });
-            } catch (error) {
-                if (!silent) showToast('error', '无法查询最新服务器地址：' + (error.message || error));
-                throw new Error('无法查询最新服务器地址');
-            }
-            var data;
-            try { data = await response.json(); }
-            catch (error) { throw new Error('服务器地址公告返回格式错误'); }
-            if (!response.ok || !data || data.ok === false || !data.api_url) {
-                throw new Error((data && data.error) || '服务器地址公告暂不可用');
-            }
-            var discovered = normalizeApiUrl(data.api_url);
-            if (!isAllowedApiUrl(discovered)) {
-                console.warn('[' + extensionName + '] 公告接口下发了不在白名单内的地址，已忽略：', discovered);
-                throw new Error('服务器地址公告中的网址无效：' + discovered
-                    + '（插件白名单：' + apiUrlWhitelist.join(', ') + '）');
-            }
-            var changed = discovered !== normalizeApiUrl(settings.apiUrl);
-            settings.apiUrl = discovered;
-            lastEndpointDiscoveryAt = Date.now();
-            saveSettings();
-            $('#cpab-api-url').val(discovered);
-            if (changed && !silent) showToast('success', '已自动获取最新画图服务器地址');
-            return discovered;
-        })();
-        try { return await endpointDiscoveryPromise; }
-        finally { endpointDiscoveryPromise = null; }
-    }
-
     function requireApiUrl() {
         var apiUrl = normalizeApiUrl(settings.apiUrl);
         if (!apiUrl) throw new Error('请先填写网址');
@@ -895,21 +853,30 @@ jQuery(async function () {
         finally { trialClaimPromise = null; }
     }
 
-    async function requireConnectionSettings() {
-        /* 【关键】公告服务（Cloudflare Worker）只用来"看看有没有换地址"。
-           我们已经有固定域名 draw.410847381.xyz，所以它连不上也不该影响出图。
+    /* 统一决定用哪个地址发请求：优先用户保存的，其次固定域名。
+       两处都会校验白名单，避免用户手改出一个奇怪的地址。 */
+    function resolveApiUrlForRequest() {
+        var apiUrl = normalizeApiUrl(settings.apiUrl);
+        if (apiUrl && isAllowedApiUrl(apiUrl)) return apiUrl;
+        return DEFAULT_API_URL;
+    }
 
-           以前这里是 `await refreshDiscoveredApiUrl(false, true)`，它会抛异常，
-           而异常会沿着这里往上冒，直接把出图/领额度打断——表现就是
-           "网络没问题但就是画不出来"。现在改成【尽力而为】：
-           拿得到新地址就用新的，拿不到就用已保存的地址继续。 */
-        try {
-            await refreshDiscoveredApiUrl(false, true);
-        } catch (error) {
-            console.warn('[' + extensionName + '] 公告服务不可用，改用已保存的服务器地址：', error && error.message);
-        }
+    async function requireConnectionSettings() {
+        /* 出图只用固定域名，【不碰公告服务】。
+
+           域名已经是固定的（draw.410847381.xyz），不需要每次去问
+           "有没有换地址"——那个公告 Worker 只是当年从快速隧道迁移过来时留下的，
+           现在纯属多余，还多一跳、多一个可能挂掉的环节。
+
+           以前这里有 `await refreshDiscoveredApiUrl(...)`，
+           公告 Worker 连不上就把出图整个打断，属于自己给自己找麻烦。
+           现在彻底去掉：用户从服务器拿密钥、直接出图，中间不经过任何第三方。 */
         var apiUrl = normalizeApiUrl(settings.apiUrl) || DEFAULT_API_URL;
-        if (!/^https?:\/\//i.test(apiUrl)) throw new Error('服务器地址无效，请在设置里重新获取');
+        if (!/^https?:\/\//i.test(apiUrl)) throw new Error('服务器地址无效，请重新安装插件或联系群主');
+        if (!isAllowedApiUrl(apiUrl)) {
+            console.warn('[' + extensionName + '] 保存的地址不在白名单内，改用固定域名：', apiUrl);
+            apiUrl = DEFAULT_API_URL;
+        }
         var apiKey = String(settings.apiKey || '').trim();
         if (!apiKey) throw new Error('请先点击“领取免费50次”；免费额度用完后，请加QQ群联系群主购买卡密');
         return { apiUrl: apiUrl, apiKey: apiKey };
@@ -926,17 +893,18 @@ jQuery(async function () {
         try {
             response = await fetch(connection.apiUrl + path, requestOptions);
         } catch (error) {
-            var previousUrl = connection.apiUrl;
-            try {
-                var latestUrl = await refreshDiscoveredApiUrl(true, true);
-                if (latestUrl && latestUrl !== previousUrl) {
-                    connection.apiUrl = latestUrl;
+            /* 第一次连不上时，如果用户存的地址不是固定域名（比如老的隧道地址），
+               就用固定域名再试一次。这是纯本地的兜底，不请求任何外部服务。 */
+            if (connection.apiUrl !== DEFAULT_API_URL) {
+                console.warn('[' + extensionName + '] 用保存的地址连不上，改用固定域名重试');
+                connection.apiUrl = DEFAULT_API_URL;
+                try {
                     response = await fetch(connection.apiUrl + path, requestOptions);
+                } catch (retryError) {
+                    console.warn('[' + extensionName + '] 固定域名也连不上：', retryError && retryError.message);
                 }
-            } catch (discoveryError) {
-                console.warn('[' + extensionName + '] endpoint rediscovery failed', discoveryError);
             }
-            if (!response) throw new Error('无法连接服务器：' + (error.message || error));
+            if (!response) throw new Error('无法连接服务器，请检查网络：' + (error.message || error));
         }
         var data;
         try {
@@ -2513,8 +2481,8 @@ jQuery(async function () {
             }
             $button.prop('disabled', true).addClass('is-loading');
             try {
-                await refreshDiscoveredApiUrl(true, true);
-                var data = await claimTrialKey(requireApiUrl(), false);
+                /* 直接连固定域名领卡密，不去问公告服务（那玩意连不上会把领卡密也搞挂）。 */
+                var data = await claimTrialKey(resolveApiUrlForRequest(), false);
                 if (data && data.created) {
                     await Promise.all([refreshQuota(true), refreshQueueStatus(true)]);
                 }
@@ -2539,13 +2507,7 @@ jQuery(async function () {
         // ---------------- 充值入口 ----------------
         // 插件不重复实现支付界面，直接打开网页版充值页（同一套后端）
         $('#cpab-open-recharge').on('click', async function () {
-            var base = '';
-            try {
-                await refreshDiscoveredApiUrl(true, true);
-                base = requireApiUrl();
-            } catch (error) {
-                base = normalizeApiUrl(settings.apiUrl);
-            }
+            var base = resolveApiUrlForRequest();
             if (!base) {
                 showToast('error', '还没有拿到服务器地址，请稍后再试');
                 return;
@@ -2627,11 +2589,9 @@ jQuery(async function () {
         refreshButtons();
         scheduleAutoGenerate('INIT');
         setTimeout(function () { checkForUpdates(false); }, 1800);
-        try {
-            await refreshDiscoveredApiUrl(true, false);
-        } catch (error) {
-            setStatus('最新地址获取失败，将尝试已保存地址：' + (error.message || error));
-        }
+        /* 域名是固定的，启动时不需要去连任何公告服务。
+           以前这里会 await 公告 Worker，连不上就会在状态栏显示
+           "最新地址获取失败"——纯属自己吓自己，也拖慢启动。 */
         if (settings.apiUrl && settings.apiKey) {
             try {
                 await Promise.all([refreshQuota(true), refreshQueueStatus(true)]);
