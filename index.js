@@ -457,8 +457,28 @@ jQuery(async function () {
         throw lastError || new Error('无法读取版本文件，请检查网络');
     }
 
+    /* 把"扩展装在全局目录还是用户目录"显示出来。
+       这个判断以前出过 bug（查错了 extension_types 的键格式），
+       导致"立即更新"报 Directory does not exist。
+       显示出来之后，一眼就能看出判断对不对。 */
+    function renderInstallInfo() {
+        var $el = $('#cpab-install-info');
+        if (!$el.length) return;
+        var type = resolveExtensionType();
+        var label;
+        if (type === 'global') {
+            label = '全局扩展（public/scripts/extensions/third-party/）';
+        } else if (type === 'local') {
+            label = '用户扩展（data/<用户>/extensions/）';
+        } else {
+            label = '未识别（更新时会自动两种都试）';
+        }
+        $el.text('安装类型：' + label);
+    }
+
     function renderUpdateState(message) {
         $('#cpab-current-version').text(updaterState.currentVersion);
+        renderInstallInfo();
         $('#cpab-update-status').text(message || '');
         $('#cpab-settings .cpab-update-panel').toggleClass('has-update', updaterState.available);
         var $button = $('#cpab-check-update');
@@ -617,7 +637,8 @@ jQuery(async function () {
                 throw new Error(detail || '更新接口没有返回成功');
             }
 
-            renderUpdateState('更新成功，即将自动刷新页面...');
+            updaterState.lastUpdateMode = success.global ? 'global' : 'local';
+            renderUpdateState('更新成功（' + (success.global ? '全局' : '用户') + '扩展模式），即将自动刷新页面...');
             showToast('success', '默默画图更新成功，页面即将刷新');
             setTimeout(function () { window.location.reload(); }, 2200);
         } catch (error) {
