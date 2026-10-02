@@ -2233,6 +2233,43 @@ jQuery(async function () {
         }
     }
 
+    /* 把世界书下载成 json 文件，让用户自己导入酒馆。
+       用途：自动注入和自动挂载在某些酒馆环境（比如安卓版）里不生效，
+       这时只能靠用户手动导入世界书。文件名用中文，方便用户在文件管理器里认出来。 */
+    function downloadWorldbook() {
+        try {
+            var content = effectiveInstructionText();
+            if (!content) {
+                deps().setInstructionEditorMessage('指令内容为空，无法生成世界书文件。', true);
+                return;
+            }
+            var data = buildWorldbookData(content);
+            var json = JSON.stringify(data, null, 4);
+            var fileName = WORLDBOOK_NAME + '.json';
+
+            /* 和酒馆内部 utils.js 的 download() 同样的做法：
+               Blob + ObjectURL + 隐藏 a 标签点击，然后立刻释放 URL。 */
+            var blob = new Blob([json], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            deps().setInstructionEditorMessage(
+                '已下载「' + fileName + '」。把它导入酒馆的世界书面板（顶部 🌐 图标 → 导入），'
+                + '再在「已启用的世界（全局有效）」里选上它，就能生效了。', false);
+            deps().showToast('success', '世界书已下载：' + fileName);
+        } catch (error) {
+            deps().setInstructionEditorMessage(
+                '下载失败：' + (error && error.message ? error.message : error)
+                + '（可以换个浏览器或换台设备再试）', true);
+        }
+    }
+
     /* 卸载：从全局启用列表里去掉（不删文件，方便用户自己决定） */
     async function uninstallWorldbook() {
         var removed = false;
@@ -2412,6 +2449,7 @@ jQuery(async function () {
         // 备用方案：安装 / 取消世界书
         $('#cpab-install-worldbook').off('click.cpabInstr').on('click.cpabInstr', installWorldbook);
         $('#cpab-uninstall-worldbook').off('click.cpabInstr').on('click.cpabInstr', uninstallWorldbook);
+        $('#cpab-download-worldbook').off('click.cpabInstr').on('click.cpabInstr', downloadWorldbook);
         refreshWorldbookStatus().catch(function () { /* 状态查询失败不影响使用 */ });
 
         // 切换分辨率时立刻刷新消耗提示（高清档慢约 10 秒、扣 2 次）
