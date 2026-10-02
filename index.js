@@ -154,7 +154,9 @@ jQuery(async function () {
         updating: false,
         notifiedVersion: '',
         /* 各更新源分别报的版本，排查"为什么检查不到新版"时用得上 */
-        remoteVersions: []
+        remoteVersions: [],
+        /* 更新时每种模式各返回了什么，排查"为什么更新失败"时用得上 */
+        updateAttempts: []
     };
 
     function loadLocalSettings() {
@@ -547,6 +549,25 @@ jQuery(async function () {
         return '';
     }
 
+    /* 真正去调酒馆的更新接口。返回 {ok, status, text}，不抛异常。 */
+    async function callExtensionUpdate(isGlobal, headers) {
+        try {
+            var response = await fetch('/api/extensions/update', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    extensionName: extensionName,
+                    global: isGlobal
+                })
+            });
+            var text = '';
+            try { text = await response.text(); } catch (e) { text = ''; }
+            return { ok: response.ok, status: response.status, text: text };
+        } catch (error) {
+            return { ok: false, status: -1, text: (error && error.message) || String(error) };
+        }
+    }
+
     async function performExtensionUpdate() {
         if (updaterState.updating) return;
         updaterState.updating = true;
@@ -554,21 +575,48 @@ jQuery(async function () {
         try {
             var context = contextGetter();
             var common = context && context.common ? context.common : context;
-            var extensions = context && context.extensions ? context.extensions : {};
             var getRequestHeaders = common && common.getRequestHeaders;
             if (typeof getRequestHeaders !== 'function') throw new Error('当前酒馆版本未提供扩展更新接口');
-            /* 注意 extensionName 用【不带前缀的短名】，
-               带 'third-party/' 会被服务端 sanitize 去掉斜杠导致路径拼错。 */
-            var isGlobal = resolveExtensionType() === 'global';
-            var response = await fetch('/api/extensions/update', {
-                method: 'POST',
-                headers: getRequestHeaders(),
-                body: JSON.stringify({
-                    extensionName: extensionName,
-                    global: isGlobal
-                })
-            });
-            if (!response.ok) throw new Error((await response.text()) || ('HTTP ' + response.status));
+            var headers = getRequestHeaders();
+
+            /* 扩展装在 public/scripts/extensions/third-party/ 时是 global，
+               装在 data/<用户>/extensions/ 时是 local。
+               这两个值决定服务端去哪个目录找，传错就报 "Directory does not exist"。
+
+               但【不能只依赖查 extension_types】——不同酒馆版本里这个表的键
+               格式不一样（带不带 'third-party/' 前缀），查不到就会被误判成 local。
+               所以这里做成【自动探测】：先按推断的值试，失败就试另一个，
+               哪种能用就用哪种，彻底不依赖预先判断。
+
+               注意 extensionName 必须用【不带前缀的短名】：
+               服务端会用 sanitize-filename 处理它，斜杠会被删掉，
+               传 'third-party/xxx' 会拼成 'third-partyxxx' 导致路径错误。 */
+            var inferred = resolveExtensionType() === 'global';
+            var order = inferred ? [true, false] : [false, true];
+            var attempts = [];
+            var success = null;
+            for (var i = 0; i < order.length; i++) {
+                var tried = order[i];
+                renderUpdateState('正在安装（' + (tried ? '全局扩展' : '用户扩展') + '模式）...');
+                var res = await callExtensionUpdate(tried, headers);
+                attempts.push({ global: tried, status: res.status, text: String(res.text || '').slice(0, 200) });
+                if (res.ok) { success = { global: tried, text: res.text }; break; }
+                updaterState.updateAttempts = attempts;
+                /* 403 = 没权限动全局扩展：这种就没必要再试另一个了 */
+                if (res.status === 403) break;
+                console.warn('[' + extensionName + '] 更新尝试失败', tried ? 'global' : 'local', res.status, res.text);
+            }
+
+            if (!success) {
+                /* 两种模式都失败：把各自的返回原文写出来，
+                   用户截图反馈时就能直接看出是"目录找不到"还是"没权限"还是"服务器连不上 GitHub"。 */
+                var detail = attempts.map(function (a) {
+                    return (a.global ? '全局' : '用户') + '模式 → HTTP ' + a.status + '：'
+                        + String(a.text || '').replace(/\s+/g, ' ').slice(0, 120);
+                }).join(' ｜ ');
+                throw new Error(detail || '更新接口没有返回成功');
+            }
+
             renderUpdateState('更新成功，即将自动刷新页面...');
             showToast('success', '默默画图更新成功，页面即将刷新');
             setTimeout(function () { window.location.reload(); }, 2200);
