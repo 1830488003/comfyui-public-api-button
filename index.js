@@ -151,7 +151,9 @@ jQuery(async function () {
         available: false,
         checking: false,
         updating: false,
-        notifiedVersion: ''
+        notifiedVersion: '',
+        /* 各更新源分别报的版本，排查"为什么检查不到新版"时用得上 */
+        remoteVersions: []
     };
 
     function loadLocalSettings() {
@@ -394,11 +396,50 @@ jQuery(async function () {
         ];
     }
 
+    /* 从所有源里读出每个能拿到的版本号。
+       注意：不能"第一个能解析就用"——GitHub raw 和 jsDelivr 都可能返回**缓存里的旧版本**
+       （实测 jsDelivr 缓存过 11 小时以上），那样会误报"已是最新"，用户就更新不了。
+       所以要把所有源都读一遍，再挑版本号最大的。 */
+    async function collectRemoteManifestVersions() {
+        var sources = updaterSources('manifest.json');
+        var found = [];
+        var lastError = null;
+        for (var i = 0; i < sources.length; i++) {
+            try {
+                var response = await fetch(sources[i], { cache: 'no-store' });
+                if (!response.ok) { lastError = new Error('HTTP ' + response.status); continue; }
+                var content = await response.text();
+                var version = parseManifestVersion(content);
+                if (version) found.push({ version: version, content: content, source: sources[i] });
+                else lastError = new Error('版本文件内容不合法');
+            } catch (error) {
+                lastError = error;
+            }
+        }
+        if (!found.length) throw lastError || new Error('无法读取版本文件，请检查网络');
+        return found;
+    }
+
+    /* 取所有源里**版本最高**的那个 manifest。
+       版本号只会单调递增，所以取最大值一定是对的。 */
+    async function fetchLatestRemoteManifest() {
+        var found = await collectRemoteManifestVersions();
+        var best = found[0];
+        for (var i = 1; i < found.length; i++) {
+            if (compareVersions(found[i].version, best.version) > 0) best = found[i];
+        }
+        best.allVersions = found.map(function (x) { return x.version; });
+        return best;
+    }
+
     async function fetchRemoteUpdaterFile(filePath) {
+        /* 版本文件走"取最高版本"的逻辑，避免被 CDN 缓存骗到 */
+        if (filePath === 'manifest.json') {
+            return (await fetchLatestRemoteManifest()).content;
+        }
         var sources = updaterSources(filePath);
         var lastError = null;
-        /* 按可靠性顺序试，第一个能用的就采用。
-           /refs/heads/main/ 走的是与 /main/ 不同的缓存，实测能立刻拿到刚推送的版本。 */
+        /* 其他文件按可靠性顺序试，第一个能用的就采用。 */
         for (var i = 0; i < sources.length; i++) {
             try {
                 var response = await fetch(sources[i], { cache: 'no-store' });
@@ -452,7 +493,9 @@ jQuery(async function () {
             var localResponse = await fetch(extensionFolderPath + '/manifest.json?t=' + Date.now(), { cache: 'no-store' });
             if (!localResponse.ok) throw new Error('本地版本读取失败，HTTP ' + localResponse.status);
             updaterState.currentVersion = parseManifestVersion(await localResponse.text());
-            updaterState.latestVersion = parseManifestVersion(await fetchRemoteUpdaterFile('manifest.json'));
+            var remote = await fetchLatestRemoteManifest();
+            updaterState.latestVersion = remote.version;
+            updaterState.remoteVersions = remote.allVersions || [];
             updaterState.available = compareVersions(updaterState.latestVersion, updaterState.currentVersion) > 0;
             if (updaterState.available) {
                 renderUpdateState('发现新版本 v' + updaterState.latestVersion + '，点击按钮即可更新并自动刷新。');
