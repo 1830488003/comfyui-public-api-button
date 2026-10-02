@@ -155,8 +155,6 @@ jQuery(async function () {
         notifiedVersion: '',
         /* 各更新源分别报的版本，排查"为什么检查不到新版"时用得上 */
         remoteVersions: [],
-        /* 更新时每种模式各返回了什么，排查"为什么更新失败"时用得上 */
-        updateAttempts: []
     };
 
     function loadLocalSettings() {
@@ -461,15 +459,6 @@ jQuery(async function () {
        这个判断以前出过 bug（查错了 extension_types 的键格式），
        导致"立即更新"报 Directory does not exist。
        显示出来之后，一眼就能看出判断对不对。 */
-    /* 判断错误是不是"服务器上没装 git"。
-       酒馆的扩展安装/更新底层全是 simple-git，服务器（尤其是安卓 App）没有 git 时
-       会抛 spawn git ENOENT，酒馆只会回一句 Internal Server Error，用户完全看不懂。 */
-    function isGitMissingError(text) {
-        var t = String(text || '');
-        return t.indexOf('ENOENT') >= 0 || t.indexOf('spawn git') >= 0
-            || t.indexOf('Internal Server Error') >= 0;
-    }
-
     function renderInstallInfo() {
         var $el = $('#cpab-install-info');
         if (!$el.length) return;
@@ -496,7 +485,7 @@ jQuery(async function () {
         } else if (updaterState.checking) {
             $button.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i> 检查中...');
         } else if (updaterState.available) {
-            $button.prop('disabled', false).html('<i class="fa-solid fa-cloud-arrow-down"></i> 立即更新 v' + updaterState.latestVersion);
+            $button.prop('disabled', false).html('<i class="fa-solid fa-cloud-arrow-down"></i> 手动更新到 v' + updaterState.latestVersion);
         } else {
             $button.prop('disabled', false).html('<i class="fa-solid fa-cloud-arrow-down"></i> 检查更新');
         }
@@ -505,7 +494,7 @@ jQuery(async function () {
     function showAutomaticUpdateNotice() {
         if (!updaterState.available || updaterState.notifiedVersion === updaterState.latestVersion) return;
         updaterState.notifiedVersion = updaterState.latestVersion;
-        var message = '发现新版本 v' + updaterState.latestVersion + '，请打开“默默画图”设置，点击“立即更新”。';
+        var message = '发现新版本 v' + updaterState.latestVersion + '，请打开“默默画图”设置，点击“手动更新”获取安装网址。';
         if (window.toastr && window.toastr.warning) {
             window.toastr.warning(message, '默默画图有更新', {
                 closeButton: true,
@@ -530,9 +519,9 @@ jQuery(async function () {
             updaterState.remoteVersions = remote.allVersions || [];
             updaterState.available = compareVersions(updaterState.latestVersion, updaterState.currentVersion) > 0;
             if (updaterState.available) {
-                renderUpdateState('发现新版本 v' + updaterState.latestVersion + '，点击按钮即可更新并自动刷新。');
+                renderUpdateState('发现新版本 v' + updaterState.latestVersion + '，点右边按钮会给出安装网址（酒馆的自动更新依赖 git，部分环境用不了）。');
                 showAutomaticUpdateNotice();
-                if (isManual) showToast('success', '发现新版本 v' + updaterState.latestVersion + '，请点击立即更新');
+                if (isManual) showToast('success', '发现新版本 v' + updaterState.latestVersion + '，点击「手动更新」获取安装网址');
             } else {
                 renderUpdateState('当前已是最新版本 v' + updaterState.currentVersion);
                 if (isManual) showToast('success', '当前已是最新版本 v' + updaterState.currentVersion);
@@ -578,99 +567,102 @@ jQuery(async function () {
         return '';
     }
 
-    /* 真正去调酒馆的更新接口。返回 {ok, status, text}，不抛异常。 */
-    async function callExtensionUpdate(isGlobal, headers) {
+    /* ============================================================
+       关于"自动更新"：酒馆做不到，所以这里改成引导手动安装
+       ------------------------------------------------------------
+       原因：酒馆的扩展安装/更新功能底层调用的是系统 git 命令
+       （src/endpoints/extensions.js 里 18 处 simple-git 调用）。
+       安卓等环境没有 git 时，酒馆会抛 spawn git ENOENT，
+       只会回一句 Internal Server Error，用户完全看不懂。
+
+       酒馆 1.17.0 起引入了 isomorphic-git（纯 JS 的 git），
+       但目前只迁移了"安装"这一个端点，"更新"仍然是系统 git。
+       所以插件无法自己完成升级，只能引导用户走安装流程。
+
+       注意：插件是浏览器里的 JS，无法在服务器上执行程序或写扩展目录，
+       所以"插件内置一个 git"这条路是走不通的。
+       ============================================================ */
+
+    /* 扩展的 git 地址。用户在酒馆的「安装扩展」里粘贴这个即可。 */
+    var EXTENSION_REPO_URL = 'https://github.com/1830488003/comfyui-public-api-button';
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text).then(function () { return true; })
+                .catch(function () { return fallbackCopy(text); });
+        }
+        return Promise.resolve(fallbackCopy(text));
+    }
+
+    function fallbackCopy(text) {
         try {
-            var response = await fetch('/api/extensions/update', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({
-                    extensionName: extensionName,
-                    global: isGlobal
-                })
-            });
-            var text = '';
-            try { text = await response.text(); } catch (e) { text = ''; }
-            return { ok: response.ok, status: response.status, text: text };
+            var $ta = $('<textarea>').val(text).css({ position: 'fixed', opacity: 0 }).appendTo(document.body);
+            $ta[0].select();
+            var okCopy = document.execCommand('copy');
+            $ta.remove();
+            return !!okCopy;
         } catch (error) {
-            return { ok: false, status: -1, text: (error && error.message) || String(error) };
+            return false;
         }
     }
 
+    /* 弹出"手动安装/更新"引导：给出网址 + 复制按钮 + 步骤 */
+    async function showManualInstallGuide() {
+        var copied = await copyToClipboard(EXTENSION_REPO_URL);
+        var copyHint = copied ? '（网址已复制到剪贴板）' : '（自动复制失败，请手动长按选中复制）';
+
+        var html = [
+            '<div style="text-align:left;line-height:1.75;font-size:0.95em">',
+            '<p><b>为什么要手动装？</b><br>',
+            '酒馆的「更新扩展」底层要用服务器上的 <code>git</code> 命令。',
+            '有些环境（比如安卓版酒馆）没有 git，酒馆就会报 ',
+            '<code>Internal Server Error</code>，插件没法自己升级。</p>',
+            '<p><b>操作步骤（30 秒）：</b></p>',
+            '<ol style="padding-left:20px;margin:6px 0">',
+            '<li>把下面这个网址复制好 ' + copyHint + '</li>',
+            '<li>在酒馆里打开 <b>扩展</b> 面板 → 点 <b>「安装扩展」</b></li>',
+            '<li>把网址粘进输入框 → 点 <b>「Install just for me」</b>（只为我安装）</li>',
+            '<li>装完 <b>重载酒馆页面</b>，就完成更新了</li>',
+            '</ol>',
+            '<p style="display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap">',
+            '<code style="flex:1 1 240px;overflow-wrap:anywhere">' + EXTENSION_REPO_URL + '</code>',
+            '<i class="fa-solid fa-copy" style="cursor:pointer" title="再复制一次"></i>',
+            '</p>',
+            '<p style="opacity:.7;font-size:.9em;margin-top:8px">',
+            '如果提示「目录已存在」，先在上面那个面板里把「默默画图」删掉，再重新安装即可。',
+            '</p>',
+            '</div>',
+        ].join('');
+
+        var $dlg = $(html);
+        // 让对话框里的复制图标也能用
+        $dlg.find('.fa-copy').on('click', async function () {
+            var again = await copyToClipboard(EXTENSION_REPO_URL);
+            showToast(again ? 'success' : 'error', again ? '网址已复制' : '复制失败，请手动复制');
+        });
+
+        if (typeof window.callGenericPopup === 'function') {
+            window.callGenericPopup($dlg[0], window.POPUP_TYPE && window.POPUP_TYPE.TEXT, '', { wide: true, allowVerticalScrolling: true });
+        } else if (window.toastr && window.toastr.info) {
+            window.toastr.info(EXTENSION_REPO_URL, '请复制这个网址，用「安装扩展」手动安装', { timeOut: 0, closeButton: true, escapeHtml: true });
+        } else {
+            window.alert('请复制这个网址，用酒馆的「安装扩展」手动安装：\n\n' + EXTENSION_REPO_URL);
+        }
+    }
+
+    /* 保留这个函数名，让"检查更新"发现新版本时点击按钮走这里 */
     async function performExtensionUpdate() {
         if (updaterState.updating) return;
         updaterState.updating = true;
-        renderUpdateState('正在下载并安装新版本，请不要关闭页面...');
+        renderUpdateState('正在准备手动安装指引...');
         try {
-            var context = contextGetter();
-            var common = context && context.common ? context.common : context;
-            var getRequestHeaders = common && common.getRequestHeaders;
-            if (typeof getRequestHeaders !== 'function') throw new Error('当前酒馆版本未提供扩展更新接口');
-            var headers = getRequestHeaders();
-
-            /* 扩展装在 public/scripts/extensions/third-party/ 时是 global，
-               装在 data/<用户>/extensions/ 时是 local。
-               这两个值决定服务端去哪个目录找，传错就报 "Directory does not exist"。
-
-               但【不能只依赖查 extension_types】——不同酒馆版本里这个表的键
-               格式不一样（带不带 'third-party/' 前缀），查不到就会被误判成 local。
-               所以这里做成【自动探测】：先按推断的值试，失败就试另一个，
-               哪种能用就用哪种，彻底不依赖预先判断。
-
-               注意 extensionName 必须用【不带前缀的短名】：
-               服务端会用 sanitize-filename 处理它，斜杠会被删掉，
-               传 'third-party/xxx' 会拼成 'third-partyxxx' 导致路径错误。 */
-            var inferred = resolveExtensionType() === 'global';
-            var order = inferred ? [true, false] : [false, true];
-            var attempts = [];
-            var success = null;
-            for (var i = 0; i < order.length; i++) {
-                var tried = order[i];
-                renderUpdateState('正在安装（' + (tried ? '全局扩展' : '用户扩展') + '模式）...');
-                var res = await callExtensionUpdate(tried, headers);
-                attempts.push({ global: tried, status: res.status, text: String(res.text || '').slice(0, 200) });
-                if (res.ok) { success = { global: tried, text: res.text }; break; }
-                updaterState.updateAttempts = attempts;
-                /* 403 = 没权限动全局扩展：这种就没必要再试另一个了 */
-                if (res.status === 403) break;
-                console.warn('[' + extensionName + '] 更新尝试失败', tried ? 'global' : 'local', res.status, res.text);
-            }
-
-            if (!success) {
-                /* 两种模式都失败：把各自的返回原文写出来，
-                   用户截图反馈时就能直接看出是"目录找不到"还是"没权限"还是"服务器连不上 GitHub"。 */
-                var detail = attempts.map(function (a) {
-                    return (a.global ? '全局' : '用户') + '模式 → HTTP ' + a.status + '：'
-                        + String(a.text || '').replace(/\s+/g, ' ').slice(0, 120);
-                }).join(' ｜ ');
-
-                /* 如果看起来是"服务器没装 git"，直接给出人话解释和出路，
-                   因为酒馆只会回一句 Internal Server Error，用户根本不知道该怎么办。 */
-                var allText = attempts.map(function (a) { return String(a.text || ''); }).join(' ');
-                if (isGitMissingError(allText)) {
-                    throw new Error(
-                        '这台酒馆的服务器上没有 git，所以无法用「立即更新」升级。\n\n' +
-                        '原因：酒馆的扩展安装/更新功能底层调用的是 git 命令，' +
-                        '服务器（尤其是安卓 App / Termux 环境）没装 git 时会报 ' +
-                        'spawn git ENOENT，酒馆只会笼统地回一句 Internal Server Error。\n\n' +
-                        '三种出路（任选其一）：\n' +
-                        '1. 在这台服务器上装 git（Termux 里执行 pkg install git），装完重开酒馆；\n' +
-                        '2. 在电脑上打开酒馆和这个扩展，用电脑的「立即更新」升级（电脑装了 git 就能成功）；\n' +
-                        '3. 直接用网页版画图，不需要这个插件：https://draw.410847381.xyz\n\n' +
-                        '（原始返回：' + detail + '）'
-                    );
-                }
-                throw new Error(detail || '更新接口没有返回成功');
-            }
-
-            updaterState.lastUpdateMode = success.global ? 'global' : 'local';
-            renderUpdateState('更新成功（' + (success.global ? '全局' : '用户') + '扩展模式），即将自动刷新页面...');
-            showToast('success', '默默画图更新成功，页面即将刷新');
-            setTimeout(function () { window.location.reload(); }, 2200);
+            await showManualInstallGuide();
+            renderUpdateState('已给出安装网址。用酒馆的「安装扩展」粘贴该网址即可更新到 v' + updaterState.latestVersion + '。');
         } catch (error) {
+            renderUpdateState('无法打开指引：' + (error && error.message ? error.message : error));
+        } finally {
             updaterState.updating = false;
-            renderUpdateState('更新失败：' + (error.message || error));
-            showToast('error', '更新失败：' + (error.message || error));
+            renderUpdateState($('#cpab-update-status').text());
         }
     }
 
