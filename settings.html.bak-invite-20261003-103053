@@ -59,34 +59,6 @@
       <div id="cpab-queue-status" class="cpab-server-queue is-offline">服务器队列：队列离线</div>
       <div id="cpab-status" class="cpab-status">就绪</div>
 
-      <div class="cpab-invite">
-        <div class="cpab-invite-head">
-          <strong><i class="fa-solid fa-share-nodes"></i> 分享给好友，双方都得次数</strong>
-        </div>
-        <div class="cpab-invite-body">
-          好友通过你的链接来，<b>他照常领 50 次免费额度</b>，你额外得
-          <b id="cpab-invite-reward">30</b> 次。
-        </div>
-        <div class="cpab-invite-code-row">
-          <span class="cpab-invite-label">我的邀请码</span>
-          <b id="cpab-invite-code">--------</b>
-        </div>
-        <div class="cpab-invite-link" id="cpab-invite-link">正在获取…</div>
-        <div class="cpab-invite-actions">
-          <button id="cpab-copy-invite" class="menu_button" type="button"><i class="fa-solid fa-copy"></i> 复制邀请链接</button>
-          <button id="cpab-refresh-invite" class="menu_button" type="button"><i class="fa-solid fa-arrows-rotate"></i> 刷新</button>
-        </div>
-        <div class="cpab-invite-stat" id="cpab-invite-stat"></div>
-        <div class="cpab-invite-tip">
-          只有<b>真正的新用户</b>通过你的链接领取免费额度，才会给你加次数。<br>
-          同一个网络（IP）的第二台设备不算新用户；也不能邀请自己。
-        </div>
-        <div class="cpab-invite-apply">
-          <input id="cpab-invite-input" class="text_pole" type="text" placeholder="有邀请码？填这里（选填）" maxlength="16" autocomplete="off">
-          <button id="cpab-apply-invite" class="menu_button" type="button"><i class="fa-solid fa-check"></i> 提交</button>
-        </div>
-      </div>
-
       <div class="cpab-recharge">
         <div class="cpab-recharge-head">
           <strong>充值 / 购买次数</strong>

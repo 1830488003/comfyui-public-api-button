@@ -112,10 +112,6 @@ jQuery(async function () {
         apiUrl: 'https://draw.410847381.xyz',
         apiKey: '',
         installId: '',
-        /* 从邀请链接（?ref=XXX）带进来的邀请码。
-           先存着，等用户真正点「领取免费50次」时再发给服务端——
-           这样"打开看看"不会白白消耗一次邀请。 */
-        pendingInviteCode: '',
         resolution: '768x512',
         steps: 4,
         /* 以下两项是插件的必需能力，强制开启，不提供关闭入口：
@@ -818,182 +814,12 @@ jQuery(async function () {
         return installId;
     }
 
-    /* ============================================================
-       分享给好友，双方都得次数
-       ------------------------------------------------------------
-       流程：
-         1. 用户在网页版/插件里看到自己的邀请码和分享链接；
-         2. 好友点链接进来（?ref=邀请码），邀请码先存在本地；
-         3. 好友点「领取免费50次」时，把邀请码一起发给服务端；
-         4. 服务端判定"确实是新用户"后，给邀请人 +30 次。
-       判定和防刷全在服务端做，插件只负责传邀请码和显示结果。
-       ============================================================ */
-
-    function normalizeInviteCode(value) {
-        return String(value || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase().slice(0, 16);
-    }
-
-    /* 从地址栏取邀请码（?ref=XXX 或 #ref=XXX），存进设置等领取时用 */
-    function captureInviteCodeFromUrl() {
-        var code = '';
-        try {
-            var search = new URLSearchParams(window.location.search || '');
-            code = search.get('ref') || search.get('invite') || '';
-            if (!code && window.location.hash) {
-                var hash = new URLSearchParams(String(window.location.hash).replace(/^#/, ''));
-                code = hash.get('ref') || hash.get('invite') || '';
-            }
-        } catch (error) {
-            console.warn('[' + extensionName + '] 解析邀请码失败', error);
-            code = '';
-        }
-        code = normalizeInviteCode(code);
-        if (code) {
-            settings.pendingInviteCode = code;
-            saveSettings();
-            $('#cpab-invite-input').val(code);
-        }
-        return code;
-    }
-
-    /* 渲染邀请面板 */
-    function renderReferral(data) {
-        if (!data) return;
-        $('#cpab-invite-code').text(normalizeInviteCode(data.code) || '--------');
-        $('#cpab-invite-link').text(data.share_url || '（分享链接暂不可用，请手动把邀请码发给好友）');
-        $('#cpab-invite-reward').text(String(data.reward_per_invite || 30));
-        var stat = '已成功邀请 ' + (data.total_count || 0) + ' 人，累计获得 ' + (data.total_earned || 0) + ' 次';
-        /* daily_cap = 0 表示不限制邀请人数，这时就不用显示"今天 x / y" */
-        if (Number(data.daily_cap) > 0) {
-            stat += '；今天 ' + (data.today_count || 0) + ' / ' + data.daily_cap;
-        }
-        $('#cpab-invite-stat').text(stat);
-        $('#cpab-invite-code').data('code', normalizeInviteCode(data.code));
-        $('#cpab-invite-link').data('link', data.share_url || '');
-    }
-
-    /* 去服务端查我的邀请数据 */
-    async function refreshReferral(silent) {
-        var apiUrl = resolveApiUrlForRequest();
-        var apiKey = String(settings.apiKey || '').trim();
-        if (!apiKey) {
-            $('#cpab-invite-code').text('--------');
-            $('#cpab-invite-link').text('填写卡密后这里会显示你的邀请链接');
-            $('#cpab-invite-stat').text('');
-            return null;
-        }
-        try {
-            var response = await fetch(apiUrl + '/v1/referral', {
-                method: 'GET',
-                headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' }
-            });
-            var data = await response.json();
-            if (!response.ok || !data || data.ok === false || !data.referral) {
-                throw new Error((data && data.error) || ('HTTP ' + response.status));
-            }
-            renderReferral(data.referral);
-            return data.referral;
-        } catch (error) {
-            $('#cpab-invite-link').text('邀请信息获取失败：' + (error.message || error));
-            if (!silent) showToast('error', '邀请信息获取失败：' + (error.message || error));
-            return null;
-        }
-    }
-
-    /* 复制邀请链接 */
-    async function copyInviteLink() {
-        var link = String($('#cpab-invite-link').data('link') || '');
-        var code = String($('#cpab-invite-code').data('code') || '');
-        if (!link && !code) {
-            showToast('warning', '还没有邀请链接，请先填写卡密并点「刷新」');
-            return;
-        }
-        var text = link
-            ? ('来玩 AI 画图，免费领 50 次：' + link)
-            : ('我的邀请码：' + code);
-        var done = await copyToClipboard(text);
-        showToast(done ? 'success' : 'error', done ? '邀请链接已复制，粘贴给好友即可' : '复制失败，请手动长按选中复制');
-    }
-
-    /* 提交邀请码（补填场景） */
-    async function applyInviteCode() {
-        var apiUrl = resolveApiUrlForRequest();
-        var apiKey = String(settings.apiKey || '').trim();
-        if (!apiKey) {
-            showToast('warning', '请先填写卡密，或点「领取免费50次」');
-            return;
-        }
-        var code = normalizeInviteCode($('#cpab-invite-input').val());
-        if (!code) {
-            showToast('warning', '请先填写邀请码');
-            return;
-        }
-        var $button = $('#cpab-apply-invite');
-        $button.prop('disabled', true);
-        try {
-            var response = await fetch(apiUrl + '/v1/referral/apply', {
-                method: 'POST',
-                headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ invite_code: code })
-            });
-            var data = await response.json();
-            if (response.ok && data && data.ok === true) {
-                showToast('success', data.message || '邀请码已生效');
-                settings.pendingInviteCode = '';
-                saveSettings();
-                $('#cpab-invite-input').val('');
-            } else {
-                showToast('error', (data && (data.message || data.error)) || '邀请码处理失败');
-            }
-        } catch (error) {
-            showToast('error', '邀请码提交失败：' + (error.message || error));
-        } finally {
-            $button.prop('disabled', false);
-        }
-    }
-
-    /* 第二步：独立领邀请奖励（默认 30 次）。
-       和领 50 次完全分开：失败了也不影响已经到账的 50 次。 */
-    async function claimInviteBonus() {
-        var code = normalizeInviteCode(settings.pendingInviteCode);
-        if (!code) return null;
-        var apiUrl = resolveApiUrlForRequest();
-        var apiKey = String(settings.apiKey || '').trim();
-        if (!apiKey) return null;
-        try {
-            var response = await fetch(apiUrl + '/v1/referral/apply', {
-                method: 'POST',
-                headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ invite_code: code })
-            });
-            var data = await response.json();
-            /* 不管成功失败，这个码都不再重复用 */
-            settings.pendingInviteCode = '';
-            saveSettings();
-            if (response.ok && data && data.ok === true) {
-                if (data.quota) {
-                    setStatus('邀请奖励已到账');
-                }
-                showToast('success', data.message || '邀请奖励已到账');
-                if (typeof refreshQuota === 'function') { try { await refreshQuota(true); } catch (e) {} }
-                return data;
-            }
-            showToast('warning', (data && (data.message || data.error)) || '邀请奖励未计入');
-            return null;
-        } catch (error) {
-            showToast('warning', '邀请奖励获取失败（不影响画图）：' + (error.message || error));
-            return null;
-        }
-    }
-
     async function claimTrialKey(apiUrl, silent) {
         if (trialClaimPromise) return trialClaimPromise;
         trialClaimPromise = (async function () {
             setStatus('正在领取新用户50次免费额度...');
             var response;
             try {
-                /* 这一步【只领免费额度】，不掺邀请逻辑：
-                   邀请奖励是独立的另一步（claimInviteBonus），两件事分开算。 */
                 response = await fetch(apiUrl + '/v1/trial', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1021,11 +847,6 @@ jQuery(async function () {
             $('#cpab-api-key').val(settings.apiKey);
             setStatus('已领取新用户50次免费额度，可以直接画图');
             if (!silent) showToast('success', '免费50次额度领取成功，卡密已自动填写');
-
-            /* 第二步：如果是从邀请链接来的，再独立领那 30 次奖励 */
-            await claimInviteBonus();
-            /* 自己的邀请面板也刷新一下 */
-            refreshReferral(true);
             return data;
         })();
         try { return await trialClaimPromise; }
@@ -2678,7 +2499,6 @@ jQuery(async function () {
             saveSettings();
             try {
                 await Promise.all([refreshQuota(false), refreshQueueStatus(false)]);
-                refreshReferral(true);
                 setStatus('额度和服务器队列查询成功');
             } catch (error) {
                 setStatus('查询失败：' + (error.message || error));
@@ -2716,9 +2536,6 @@ jQuery(async function () {
             showToast('success', '新卡密已填入并保存');
             try { await Promise.all([refreshQuota(false), refreshQueueStatus(false)]); } catch (error) { /* 忽略查询失败 */ }
         });
-        $('#cpab-copy-invite').on('click', copyInviteLink);
-        $('#cpab-refresh-invite').on('click', function () { refreshReferral(false); });
-        $('#cpab-apply-invite').on('click', applyInviteCode);
         $('#cpab-toggle-key').on('click', function () {
             var $key = $('#cpab-api-key');
             var visible = $key.attr('type') === 'text';
@@ -2767,9 +2584,6 @@ jQuery(async function () {
         var settingsHtml = await $.get(extensionFolderPath + '/settings.html');
         $('#extensions_settings2').append(settingsHtml);
         loadSettingsToUi();
-        /* 从地址栏抓邀请码（好友分享的链接会带 ?ref=XXX），存着等领取时用 */
-        captureInviteCodeFromUrl();
-        if (settings.apiKey) { refreshReferral(true); }
         bindSettingsEvents();
         bindGlobalEvents();
         refreshButtons();

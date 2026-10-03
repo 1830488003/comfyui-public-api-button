@@ -952,52 +952,21 @@ jQuery(async function () {
         }
     }
 
-    /* 第二步：独立领邀请奖励（默认 30 次）。
-       和领 50 次完全分开：失败了也不影响已经到账的 50 次。 */
-    async function claimInviteBonus() {
-        var code = normalizeInviteCode(settings.pendingInviteCode);
-        if (!code) return null;
-        var apiUrl = resolveApiUrlForRequest();
-        var apiKey = String(settings.apiKey || '').trim();
-        if (!apiKey) return null;
-        try {
-            var response = await fetch(apiUrl + '/v1/referral/apply', {
-                method: 'POST',
-                headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ invite_code: code })
-            });
-            var data = await response.json();
-            /* 不管成功失败，这个码都不再重复用 */
-            settings.pendingInviteCode = '';
-            saveSettings();
-            if (response.ok && data && data.ok === true) {
-                if (data.quota) {
-                    setStatus('邀请奖励已到账');
-                }
-                showToast('success', data.message || '邀请奖励已到账');
-                if (typeof refreshQuota === 'function') { try { await refreshQuota(true); } catch (e) {} }
-                return data;
-            }
-            showToast('warning', (data && (data.message || data.error)) || '邀请奖励未计入');
-            return null;
-        } catch (error) {
-            showToast('warning', '邀请奖励获取失败（不影响画图）：' + (error.message || error));
-            return null;
-        }
-    }
-
     async function claimTrialKey(apiUrl, silent) {
         if (trialClaimPromise) return trialClaimPromise;
         trialClaimPromise = (async function () {
             setStatus('正在领取新用户50次免费额度...');
             var response;
             try {
-                /* 这一步【只领免费额度】，不掺邀请逻辑：
-                   邀请奖励是独立的另一步（claimInviteBonus），两件事分开算。 */
+                var trialBody = { install_id: ensureInstallId() };
+                /* 如果是从好友的邀请链接进来的，把邀请码一起发过去。
+                   服务端会判定"是不是真的新用户"，是才给邀请人加次数。 */
+                var inviteCode = normalizeInviteCode(settings.pendingInviteCode);
+                if (inviteCode) trialBody.invite_code = inviteCode;
                 response = await fetch(apiUrl + '/v1/trial', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ install_id: ensureInstallId() })
+                    body: JSON.stringify(trialBody)
                 });
             } catch (error) {
                 throw new Error('无法领取免费额度：' + (error.message || error));
@@ -1022,8 +991,17 @@ jQuery(async function () {
             setStatus('已领取新用户50次免费额度，可以直接画图');
             if (!silent) showToast('success', '免费50次额度领取成功，卡密已自动填写');
 
-            /* 第二步：如果是从邀请链接来的，再独立领那 30 次奖励 */
-            await claimInviteBonus();
+            /* 服务端会告诉我们这次邀请算不算数 */
+            var invite = data.invite || {};
+            if (invite.status === 'ok') {
+                showToast('success', data.invite_message || ('邀请成功，已给邀请人加 ' + (invite.reward || 30) + ' 次'));
+            } else if (invite.status && invite.status !== 'none') {
+                showToast('warning', data.invite_message || '邀请码未计入');
+            }
+            if (inviteCode) {
+                settings.pendingInviteCode = '';
+                saveSettings();
+            }
             /* 自己的邀请面板也刷新一下 */
             refreshReferral(true);
             return data;

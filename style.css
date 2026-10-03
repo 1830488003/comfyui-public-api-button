@@ -722,6 +722,118 @@
     line-height: 1.7;
 }
 
+/* 分享得次数面板：绿色系，和黄色（购买）、红色（梯子）区分开 */
+.cpab-invite {
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(62, 207, 142, 0.42);
+  border-radius: 8px;
+  background: rgba(62, 207, 142, 0.10);
+  line-height: 1.6;
+}
+
+.cpab-invite-head {
+  font-weight: 700;
+  margin-bottom: 6px;
+  font-size: 1em;
+  color: #7ff0bd;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cpab-invite-body {
+  font-size: 0.9em;
+  line-height: 1.65;
+}
+
+.cpab-invite-body b {
+  color: #b6ffe0;
+}
+
+.cpab-invite-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 9px 0 6px;
+}
+
+.cpab-invite-label {
+  font-size: 0.86em;
+  opacity: 0.75;
+}
+
+.cpab-invite-code-row b {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 1.18em;
+  letter-spacing: 0.14em;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px dashed rgba(62, 207, 142, 0.55);
+  border-radius: 7px;
+  padding: 4px 10px;
+  color: #d8fff0;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.cpab-invite-link {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  font-size: 0.84em;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(62, 207, 142, 0.3);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #c9d6e4;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.cpab-invite-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.cpab-invite-actions .menu_button {
+  flex: 1 1 auto;
+  min-width: max-content;
+}
+
+.cpab-invite-stat {
+  margin-top: 8px;
+  font-size: 0.86em;
+  opacity: 0.85;
+}
+
+.cpab-invite-tip {
+  margin-top: 7px;
+  font-size: 0.82em;
+  line-height: 1.6;
+  opacity: 0.7;
+}
+
+.cpab-invite-apply {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.cpab-invite-apply input {
+  flex: 1 1 auto;
+  min-width: 0;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cpab-invite-apply .menu_button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 /* 顶部"需要梯子"提示：用红色系，和下面的黄色购买提示区分开，一眼能看到 */
 .cpab-vpn-notice {
   margin-bottom: 12px;
