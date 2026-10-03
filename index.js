@@ -829,6 +829,25 @@ jQuery(async function () {
        判定和防刷全在服务端做，插件只负责传邀请码和显示结果。
        ============================================================ */
 
+    /* 生成要转发给好友的完整文案。
+       要点：一定要写清楚【这是什么】+【怎么装】+【在线体验地址】，
+       只发一串网址的话，对方根本不知道那是什么，不会点。 */
+    function buildShareText(shareUrl) {
+        var url = String(shareUrl || '').trim();
+        if (!url) { return ''; }
+        return [
+            '【酒馆 AI 画图插件】装好之后聊天就能自动出图，支持中文提示词。',
+            '',
+            '① 插件安装地址（在酒馆的「扩展 → 安装扩展」里粘贴这个网址）：',
+            EXTENSION_REPO_URL,
+            '',
+            '② 在线画图体验地址（不想装插件，点开直接用）：',
+            url,
+            '',
+            '点上面任意一个链接，进去就能直接画图，会送你免费额度。',
+        ].join('\n');
+    }
+
     function normalizeInviteCode(value) {
         return String(value || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase().slice(0, 16);
     }
@@ -860,7 +879,8 @@ jQuery(async function () {
     function renderReferral(data) {
         if (!data) return;
         $('#cpab-invite-code').text(normalizeInviteCode(data.code) || '--------');
-        $('#cpab-invite-link').text(data.share_url || '（分享链接暂不可用，请手动把邀请码发给好友）');
+        var shareText = buildShareText(data.share_url);
+        $('#cpab-invite-link').text(shareText || '（分享内容暂不可用，请手动把邀请码发给好友）');
         $('#cpab-invite-reward').text(String(data.reward_per_invite || 30));
         var stat = '已成功邀请 ' + (data.total_count || 0) + ' 人，累计获得 ' + (data.total_earned || 0) + ' 次';
         /* daily_cap = 0 表示不限制邀请人数，这时就不用显示"今天 x / y" */
@@ -870,6 +890,7 @@ jQuery(async function () {
         $('#cpab-invite-stat').text(stat);
         $('#cpab-invite-code').data('code', normalizeInviteCode(data.code));
         $('#cpab-invite-link').data('link', data.share_url || '');
+        $('#cpab-invite-link').data('share', shareText);
     }
 
     /* 去服务端查我的邀请数据 */
@@ -894,25 +915,34 @@ jQuery(async function () {
             renderReferral(data.referral);
             return data.referral;
         } catch (error) {
-            $('#cpab-invite-link').text('邀请信息获取失败：' + (error.message || error));
-            if (!silent) showToast('error', '邀请信息获取失败：' + (error.message || error));
+            /* "Failed to fetch" 通常是网络到服务器这一段不通：
+               刚重启服务时隧道要十几秒才建立连接，或者用户没开代理。
+               这里给一句能指导动作的话，别让用户以为插件坏了。 */
+            var reason = (error && error.message) ? error.message : String(error);
+            if (/failed to fetch|networkerror|load failed/i.test(reason)) {
+                reason = '连不上服务器（刚重启服务要等十几秒，或检查网络/代理），稍后点「刷新」重试';
+            }
+            $('#cpab-invite-link').text('邀请信息暂时取不到：' + reason);
+            if (!silent) showToast('error', '邀请信息暂时取不到：' + reason);
             return null;
         }
     }
 
-    /* 复制邀请链接 */
+    /* 复制分享内容（带介绍 + 安装地址 + 在线体验地址） */
     async function copyInviteLink() {
         var link = String($('#cpab-invite-link').data('link') || '');
         var code = String($('#cpab-invite-code').data('code') || '');
-        if (!link && !code) {
+        var text = buildShareText(link);
+        if (!text) {
+            text = code ? ('我的邀请码：' + code) : '';
+        }
+        if (!text) {
             showToast('warning', '还没有邀请链接，请先填写卡密并点「刷新」');
             return;
         }
-        var text = link
-            ? ('来玩 AI 画图，免费领 50 次：' + link)
-            : ('我的邀请码：' + code);
         var done = await copyToClipboard(text);
-        showToast(done ? 'success' : 'error', done ? '邀请链接已复制，粘贴给好友即可' : '复制失败，请手动长按选中复制');
+        showToast(done ? 'success' : 'error',
+            done ? '分享内容已复制，直接粘贴给好友就行' : '复制失败，请手动长按选中复制');
     }
 
     /* 提交邀请码（补填场景） */

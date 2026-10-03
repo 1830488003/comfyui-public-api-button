@@ -777,17 +777,31 @@
   -webkit-user-select: all;
 }
 
+/* 分享文案的提示行 */
+.cpab-invite-share-label {
+  margin: 9px 0 6px;
+  font-size: 0.86em;
+  opacity: 0.8;
+  line-height: 1.55;
+}
 .cpab-invite-link {
-  word-break: break-all;
+  /* white-space: pre-wrap 是关键：分享文案是多行的，
+     默认会把换行折叠成空格、挤成一坨，完全没法读。
+     pre-wrap 保留换行，同时长网址还能自动折行。 */
+  white-space: pre-wrap;
+  word-break: break-word;
   overflow-wrap: anywhere;
-  font-size: 0.84em;
+  font-size: 0.82em;
+  line-height: 1.7;
   background: rgba(0, 0, 0, 0.28);
   border: 1px solid rgba(62, 207, 142, 0.3);
   border-radius: 7px;
-  padding: 7px 9px;
+  padding: 9px 11px;
   color: #c9d6e4;
   user-select: all;
   -webkit-user-select: all;
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .cpab-invite-actions {
