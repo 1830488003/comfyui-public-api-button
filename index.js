@@ -9,6 +9,54 @@ jQuery(async function () {
     var apiUrlWhitelist = ['draw.410847381.xyz'];
     /* 固定域名。公告服务连不上时用它兜底，保证出图不受影响。 */
     var DEFAULT_API_URL = 'https://draw.410847381.xyz';
+
+    /* ── 自建服务器：页面在本机时直连本机网关 ────────────────────────
+       解决什么：
+           自己搭服务器的人（酒馆和网关跑在同一台机器）原来必须绕一圈：
+               酒馆 → 公网 → Cloudflare → 隧道 → 本机网关
+           这一圈全靠公网域名解析正确。一旦本机 DNS 把域名解析错
+           （运营商/路由器投毒、本地 DNS 异常等），插件就会报
+           「Failed to fetch: 无法连接服务器」，而出图本身完全正常。
+
+           改成：页面在本机时直接连本机网关，绕开 DNS，又快又不怕污染。
+               酒馆 → 127.0.0.1:8190
+
+       为什么是安全的（逐个用户场景核对过）：
+           · 只在【页面主机名是 localhost/127.0.0.1】且【页面是 http】时
+             才启用本机地址。
+             - 用公网域名打开的用户 → 主机名不匹配 → 完全不受影响，
+               连尝试都不会发生，仍走 HTTPS。
+             - 本机开着 https 的用户 → 协议不匹配 → 也不尝试
+               （https 页面连 http 会被浏览器按混合内容拦掉，
+                干脆不试，避免控制台报错）。
+             - 本机 http 打开的用户 → 会试一次本机地址；他机器上没有
+               8190 服务，浏览器立刻拒绝（1~5 毫秒），随后自动回退到
+               公网固定域名，功能不受影响。
+           · 网关 CORS 是 Access-Control-Allow-Origin: *，
+             且允许 X-API-Key 头，跨域没问题。
+           · 连不上一律回退公网固定域名（见 apiRequest 的兜底）。
+       ──────────────────────────────────────────────────────────── */
+    var LOCAL_API_URL = 'http://127.0.0.1:8190';
+    var LOCAL_API_HOSTS = ['localhost', '127.0.0.1', '::1', '[::1]'];
+
+    /* 本机且非 https 页面 —— 两个条件都满足才用本机网关。 */
+    function useLocalGateway() {
+        try {
+            var h = String(window.location.hostname || '').toLowerCase();
+            if (LOCAL_API_HOSTS.indexOf(h) === -1) return false;
+            // https 页面连 http 会被浏览器拦掉，不试
+            return String(window.location.protocol || '').toLowerCase() === 'http:';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /* 兜底地址：本机（http）用网关，其它一律公网固定域名。 */
+    function effectiveDefaultApiUrl() {
+        return useLocalGateway() ? LOCAL_API_URL : DEFAULT_API_URL;
+    }
+
+
     var updaterRepoOwner = '1830488003';
     var updaterRepoName = 'comfyui-public-api-button';
     var storageKey = 'comfyui_public_api_button_settings';
@@ -18,6 +66,55 @@ jQuery(async function () {
     var highResolutions = ['720x1280', '1280x720'];
     var HIGH_RES_CREDIT_COST = 2;
     var allowedSteps = [4, 6, 8];
+    /* 服务端返回的可选画图模型：[{id,label,desc,allowed_steps,default_steps}]。
+       没拿到之前下拉框只有一个占位项。
+       ⚠️ 必须声明在这里：normalizeSteps() 会在模块加载阶段
+          （第 353 行 new settings 时）就被调用，而它要读 availableModels。
+          声明放太后面的话 var 提升成 undefined，会抛
+          "Cannot read properties of undefined (reading 'length')"，
+          导致整个插件注册失败。 */
+    var availableModels = [];
+    var modelsLoaded = false;
+    /* 每个模型可能有自己的可用步数（服务端 /v1/models 会给）。
+       例：Qwen-Image-2.1 走 Turbo8 蒸馏，只允许 8 步。 */
+    function stepsForModel(modelId) {
+        var mid = String(modelId || settings.model || '');
+        for (var i = 0; i < availableModels.length; i++) {
+            var m = availableModels[i];
+            if (m && m.id === mid && m.allowed_steps && m.allowed_steps.length) {
+                return m.allowed_steps.map(Number);
+            }
+        }
+        return allowedSteps;
+    }
+    function currentAllowedSteps() {
+        return stepsForModel(settings.model);
+    }
+    function defaultStepsForModel(modelId) {
+        var mid = String(modelId || settings.model || '');
+        for (var i = 0; i < availableModels.length; i++) {
+            var m = availableModels[i];
+            if (m && m.id === mid && m.default_steps != null) {
+                return Number(m.default_steps);
+            }
+        }
+        var list = stepsForModel(mid);
+        return list.length ? list[list.length - 1] : defaultSettings.steps;
+    }
+    /* 重建步数下拉：只列出当前模型允许的步数 */
+    function renderStepsSelect() {
+        var $sel = $('#cpab-steps');
+        if (!$sel.length) return;
+        var list = currentAllowedSteps();
+        var want = normalizeSteps(settings.steps);
+        $sel.empty();
+        list.forEach(function (n) {
+            $sel.append($('<option></option>').val(String(n)).text(String(n)));
+        });
+        if (list.indexOf(want) < 0) want = defaultStepsForModel(settings.model);
+        $sel.val(String(want));
+        settings.steps = want;
+    }
     var stylePresets = [
         { id: 'kpop-idol-concept', name: '韩国女团概念照', label: '韩国女团概念照', description: '真人女团回归概念照，强调妆造、棚拍灯光和商业海报质感。', promptTitle: '韩国女团真人回归概念摄影', prefix: '明确的真人时尚摄影，韩国女团成员般的年轻女性，精致舞台妆容，统一但各有区别的高定表演服装，自信镜头表现力', suffix: '专业摄影棚布光，亮泽皮肤与真实毛孔，商业杂志精修，回归预告海报构图，潮流背景装置和高级流行音乐视觉' },
         { id: 'douyin-fashion', name: '抖音爆款穿搭', label: '抖音爆款穿搭', description: '真人短视频穿搭封面，突出身材比例、手机构图和鲜明调色。', promptTitle: '抖音爆款真人穿搭短视频封面摄影', prefix: '明确的真人手机人像摄影，热门中文短视频穿搭博主，突出身材比例的时髦服装，自信自然动作，都市街道或商场场景', suffix: '竖屏短视频封面构图，显脸小的近广角视角，明亮补光，干净锐利画面，鲜明但不过度的调色，熟悉的抖音爆款穿搭观感' },
@@ -118,6 +215,14 @@ jQuery(async function () {
         pendingInviteCode: '',
         resolution: '768x512',
         steps: 4,
+        /* 画图模型：选项完全由服务端 /v1/models 提供，插件不写死清单。
+           目前只有 zturbo = Z-Image-Turbo（快）。
+           （qwen21 = Qwen-Image-2.1 已下架：它的 8B 文本编码器在 Intel Arc A770
+             上跑长提示词会把驱动搞崩、导致整机断电。
+             详见 ComfyUI 目录下的 Arc-A770-crash-原因与修复.md）
+           这里的值只是「拿不到服务端列表时」的兜底。
+           服务端负责在切换模型时卸载上一个模型，所以插件只要把 id 发过去。 */
+        model: 'zturbo',
         /* 以下两项是插件的必需能力，强制开启，不提供关闭入口：
            - autoGenerate：回复后自动出图。没有它用户得每层手点按钮。
            - injectDrawingInstruction：告诉 AI 输出绘图提示词。
@@ -170,7 +275,88 @@ jQuery(async function () {
 
     function normalizeSteps(value) {
         var numeric = Number(value);
-        return allowedSteps.indexOf(numeric) >= 0 ? numeric : defaultSettings.steps;
+        var list = currentAllowedSteps();
+        if (list.indexOf(numeric) >= 0) return numeric;
+        return defaultStepsForModel(settings.model);
+    }
+
+    /* 模型 id 校验：服务端列表还没拿到时，先放行（免得把用户的选择重置掉） */
+    function normalizeModel(value) {
+        var text = String(value || '').trim();
+        if (!text) return defaultSettings.model;
+        if (!modelsLoaded) return text;
+        for (var i = 0; i < availableModels.length; i++) {
+            if (availableModels[i].id === text) return text;
+        }
+        return defaultSettings.model;
+    }
+
+    /* 从服务端读可选模型，填进下拉框。
+       做成动态读取：以后服务端加模型，插件不用改。 */
+    async function refreshModels(silent) {
+        try {
+            var data = await apiRequest('/v1/models', { method: 'GET' });
+            var list = (data && data.models) || [];
+            if (!list.length) return;
+            availableModels = list;
+            modelsLoaded = true;
+            if (data.default && !settings.model) settings.model = String(data.default);
+            renderModelSelect();
+            renderModelNote();
+        } catch (error) {
+            if (!silent) {
+                // 读不到就保持默认，不打断使用
+            }
+        }
+    }
+
+    function renderModelSelect() {
+        var $sel = $('#cpab-model');
+        if (!$sel.length) return;
+        var current = normalizeModel(settings.model);
+        /* 关键：把归一化后的值写回 settings.model。
+           否则服务端下架某个模型（例如 qwen21 因 Arc 显卡死机被撤）之后，
+           用户存着的旧 ID 会一直留着：下拉框显示回落后的 zturbo，
+           但 settings.model 仍是 'qwen21'，每次出图还是把旧 ID 发过去。
+           现在下拉框显示什么，settings.model 就是什么。 */
+        if (settings.model !== current) {
+            console.warn('[' + extensionName + '] 已下架的模型，自动改为：', current);
+            settings.model = current;
+        }
+        $sel.empty();
+        if (!availableModels.length) {
+            $sel.append($('<option></option>').val(defaultSettings.model).text('Z-Image-Turbo（快）'));
+            $sel.val(defaultSettings.model);
+            return;
+        }
+        availableModels.forEach(function (m) {
+            var text = m.label || m.id;
+            if (m.desc) text += ' —— ' + m.desc;
+            $sel.append($('<option></option>').val(m.id).text(text));
+        });
+        $sel.val(current);
+        renderStepsSelect();
+    }
+
+    function renderModelNote() {
+        var $note = $('#cpab-model-note');
+        if (!$note.length) return;
+        var m = null;
+        for (var i = 0; i < availableModels.length; i++) {
+            if (availableModels[i].id === normalizeModel(settings.model)) { m = availableModels[i]; break; }
+        }
+        /* 说明文字改成按「服务端实际给了什么」动态生成，
+           不再写死 qwen21——那个模型已经下架，
+           以后服务端加模型这里也不用改。 */
+        var base = '切换模型时服务器会自动卸载上一个模型再载入新的，第一次用新模型会慢一些。';
+        if (m) {
+            var list = stepsForModel(m.id);
+            var locked = list.length === 1;
+            base += ' 当前选的是「' + m.label + '」：' + (locked
+                ? ('固定 ' + list[0] + ' 步（步数设置对它无效）。')
+                : ('步数可选 ' + list.join(' / ') + '，数值越小越快。'));
+        }
+        $note.text(base);
     }
 
     function normalizeResolution(value) {
@@ -777,6 +963,9 @@ jQuery(async function () {
     //   2. 快速隧道（应急回退，如 https://xxx-yyy.trycloudflare.com）
     function isAllowedApiUrl(value) {
         var url = normalizeApiUrl(value);
+        // 本机网关地址：只在页面本身是本机 http 页面时放行。
+        // 公网页面永远走不到这里。
+        if (url.toLowerCase() === LOCAL_API_URL && useLocalGateway()) return true;
         if (!/^https:\/\//i.test(url)) return false;
         for (var i = 0; i < apiUrlWhitelist.length; i++) {
             var host = String(apiUrlWhitelist[i]).toLowerCase();
@@ -1066,8 +1255,17 @@ jQuery(async function () {
        两处都会校验白名单，避免用户手改出一个奇怪的地址。 */
     function resolveApiUrlForRequest() {
         var apiUrl = normalizeApiUrl(settings.apiUrl);
+        /* 本机 http 页面优先连本机网关，绕开公网域名的 DNS 解析。
+           settings.apiUrl 里若存的是 127.0.0.1，而当前不是本机页面，
+           走下面的白名单校验会被拒，自动回退到公网地址。 */
+        if (useLocalGateway()) {
+            if (!apiUrl || apiUrl.toLowerCase() === DEFAULT_API_URL.toLowerCase()) {
+                return LOCAL_API_URL;
+            }
+            if (apiUrl.toLowerCase() === LOCAL_API_URL) return LOCAL_API_URL;
+        }
         if (apiUrl && isAllowedApiUrl(apiUrl)) return apiUrl;
-        return DEFAULT_API_URL;
+        return effectiveDefaultApiUrl();
     }
 
     async function requireConnectionSettings() {
@@ -1081,10 +1279,17 @@ jQuery(async function () {
            公告 Worker 连不上就把出图整个打断，属于自己给自己找麻烦。
            现在彻底去掉：用户从服务器拿密钥、直接出图，中间不经过任何第三方。 */
         var apiUrl = normalizeApiUrl(settings.apiUrl) || DEFAULT_API_URL;
+        /* 本机 http 页面优先走本机网关（见文件顶部 LOCAL_API_URL 说明）。 */
+        if (useLocalGateway()) {
+            var saved = normalizeApiUrl(settings.apiUrl);
+            if (!saved || saved.toLowerCase() === DEFAULT_API_URL.toLowerCase()) {
+                apiUrl = LOCAL_API_URL;
+            }
+        }
         if (!/^https?:\/\//i.test(apiUrl)) throw new Error('服务器地址无效，请重新安装插件或联系群主');
         if (!isAllowedApiUrl(apiUrl)) {
             console.warn('[' + extensionName + '] 保存的地址不在白名单内，改用固定域名：', apiUrl);
-            apiUrl = DEFAULT_API_URL;
+            apiUrl = effectiveDefaultApiUrl();
         }
         var apiKey = String(settings.apiKey || '').trim();
         if (!apiKey) throw new Error('请先点击“领取免费50次”；免费额度用完后，请加QQ群联系群主购买卡密');
@@ -1102,15 +1307,27 @@ jQuery(async function () {
         try {
             response = await fetch(connection.apiUrl + path, requestOptions);
         } catch (error) {
-            /* 第一次连不上时，如果用户存的地址不是固定域名（比如老的隧道地址），
-               就用固定域名再试一次。这是纯本地的兜底，不请求任何外部服务。 */
-            if (connection.apiUrl !== DEFAULT_API_URL) {
-                console.warn('[' + extensionName + '] 用保存的地址连不上，改用固定域名重试');
-                connection.apiUrl = DEFAULT_API_URL;
+            /* 第一次连不上就换个地址再试一次 —— 纯本地兜底，不请求任何外部服务。
+               换的方向取决于第一次用的是哪个：
+                 · 本机网关（127.0.0.1:8190）失败 → 换公网固定域名
+                 · 公网固定域名失败 → 本机 http 页面则换本机网关
+               两边必须不同才算重试；否则等于白试一次，本机 DNS 被污染时
+               就只会报「Failed to fetch」。 */
+            var fallback = null;
+            if (connection.apiUrl.toLowerCase() === LOCAL_API_URL.toLowerCase()) {
+                fallback = DEFAULT_API_URL;
+            } else if (useLocalGateway()) {
+                fallback = LOCAL_API_URL;
+            }
+            if (fallback && fallback.toLowerCase() !== connection.apiUrl.toLowerCase()) {
+                console.warn('[' + extensionName + '] ' + connection.apiUrl +
+                    ' 连不上，改用 ' + fallback + ' 重试');
+                connection.apiUrl = fallback;
                 try {
                     response = await fetch(connection.apiUrl + path, requestOptions);
                 } catch (retryError) {
-                    console.warn('[' + extensionName + '] 固定域名也连不上：', retryError && retryError.message);
+                    console.warn('[' + extensionName + '] ' + fallback +
+                        ' 也连不上：', retryError && retryError.message);
                 }
             }
             if (!response) throw new Error('无法连接服务器，请检查网络：' + (error.message || error));
@@ -1566,9 +1783,12 @@ jQuery(async function () {
         var options = readGenerationOptions();
         var last = getGenerationMeta(messageId);
         var payload = { width: options.width, height: options.height, steps: options.steps };
+        /* 画图模型交给服务端路由：它会在模型变了的时候先卸载旧的再载入新的 */
+        payload.model = normalizeModel(settings.model);
         var actionLabel = '生成图片';
         if (mode === 'random') {
-            payload.steps = last && allowedSteps.indexOf(Number(last.steps)) >= 0 ? Number(last.steps) : options.steps;
+            var _allowed = currentAllowedSteps();
+        payload.steps = last && _allowed.indexOf(Number(last.steps)) >= 0 ? Number(last.steps) : normalizeSteps(options.steps);
             actionLabel = '随机重绘';
         }
         if (mode === 'optimize') {
@@ -1662,7 +1882,11 @@ jQuery(async function () {
         $('#cpab-api-url').val(settings.apiUrl || '');
         $('#cpab-api-key').val(settings.apiKey || '');
         $('#cpab-resolution').val(normalizeResolution(settings.resolution));
-        $('#cpab-steps').val(String(normalizeSteps(settings.steps)));
+        renderStepsSelect();
+        renderModelSelect();
+        renderModelNote();
+        /* 去服务端把模型列表取回来（失败也不影响用默认值） */
+        refreshModels(true);
         renderStylePresetSelect();
         renderResolutionNote();
         updateQueueBadges();
@@ -1966,6 +2190,7 @@ jQuery(async function () {
         settings.apiKey = String($('#cpab-api-key').val() || '').trim();
         settings.resolution = normalizeResolution($('#cpab-resolution').val());
         settings.steps = normalizeSteps($('#cpab-steps').val());
+        settings.model = normalizeModel($('#cpab-model').val());
         settings.autoGenerate = true;   /* 强制开启，见 defaultSettings 注释 */
         settings.stylePreset = normalizeStylePreset(settings.stylePreset);
     }
@@ -1981,6 +2206,9 @@ jQuery(async function () {
        而且指令随插件版本走，以后改指令老用户自动生效。
 
        位置与角色：见下面 DRAWING_INSTRUCTION_DEPTH 的说明（IN_CHAT / 深度 0 / SYSTEM）。 */
+    /* availableModels / modelsLoaded 的声明已提前到文件顶部，
+       原因见那里的注释（normalizeSteps 会在模块加载时就读它）。 */
+
     var drawingInstructionCache = null;
     var drawingInstructionLoading = null;
     var DRAWING_INSTRUCTION_KEY = 'cpab_drawing_instruction';
@@ -2652,6 +2880,17 @@ jQuery(async function () {
         $('#cpab-download-worldbook').off('click.cpabInstr').on('click.cpabInstr', downloadWorldbook);
         refreshWorldbookStatus().catch(function () { /* 状态查询失败不影响使用 */ });
 
+        // 切换画图模型：只改本地设置并提示，真正卸载/载入由服务端在生成时做
+        $('#cpab-model').on('change', function () {
+            collectSettingsFromUi();
+            renderModelNote();
+            saveSettings();
+            var m = null;
+            for (var i = 0; i < availableModels.length; i++) {
+                if (availableModels[i].id === settings.model) { m = availableModels[i]; break; }
+            }
+            showToast('success', '已切换到「' + (m ? m.label : settings.model) + '」，下次出图生效');
+        });
         // 切换分辨率时立刻刷新消耗提示（高清档慢约 10 秒、扣 2 次）
         $('#cpab-resolution').on('change', function () {
             collectSettingsFromUi();

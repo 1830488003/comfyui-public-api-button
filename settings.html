@@ -38,10 +38,10 @@
                 <div class="cpab-section-title">使用说明</div>
                 <div>填写卡密并保存即可，<b>不需要另外导入世界书</b>（插件已内置绘图指令）。之后正常聊天，AI 回复里会带上绘图提示词，插件会自动出图。</div>
             </div>
-      <p class="cpab-help">插件启动会自动获取最新服务器地址。<b>新用户点下面的「领取免费50次」</b>，卡密会自动填进上面的输入框并保存，不用手动复制。免费额度用完后，请加上面的QQ群联系群主购买卡密，用「粘贴新卡密」贴进来即可。</p>
+      <p class="cpab-help">服务器地址已内置，<b>不需要填、不需要梯子</b>，直连即可用。<b>新用户点下面的「领取免费50次」</b>，卡密会自动填进上面的输入框并保存，不用手动复制。免费额度用完后，请加上面的QQ群联系群主购买卡密，用「粘贴新卡密」贴进来即可。</p>
 
-      <label for="cpab-api-url">服务器地址（自动获取）</label>
-      <input id="cpab-api-url" class="text_pole" type="url" placeholder="插件启动后自动获取" readonly>
+      <label for="cpab-api-url">服务器地址（内置）</label>
+      <input id="cpab-api-url" class="text_pole" type="url" placeholder="已内置，无需修改" readonly>
 
       <label for="cpab-api-key">卡密</label>
       <div class="cpab-key-row">
@@ -105,6 +105,15 @@
       </div>
 
       <div class="cpab-grid">
+        <div style="grid-column:1/-1">
+          <label for="cpab-model">画图模型</label>
+          <select id="cpab-model" class="text_pole">
+            <option value="">（正在从服务器读取…）</option>
+          </select>
+          <div class="cpab-res-note" id="cpab-model-note">
+            切换模型后，服务器会自动把上一个模型从显存卸载再载入新的；第一次用新模型会慢一些。
+          </div>
+        </div>
         <div>
           <label for="cpab-resolution">分辨率</label>
           <select id="cpab-resolution" class="text_pole">
@@ -123,6 +132,11 @@
             <option value="6">6</option>
             <option value="8">8</option>
           </select>
+          <div class="cpab-res-note" id="cpab-steps-note">
+                  选 Z-Image-Turbo 时步数有效（4 最快，8 最细）。<br>
+                  选 Qwen-Image-2.1 时<b>自动锁定为 8 步</b>（该模型是 8 步蒸馏版，
+                  其他步数会明显掉画质，所以这一项会跟着模型自动切换）。
+                </div>
         </div>
       </div>
 
