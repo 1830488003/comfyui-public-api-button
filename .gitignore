@@ -6,3 +6,6 @@
 # 服务端不在这里，但以防万一
 gateway.db*
 service-logs/
+# 本机测试用的副本，不进仓库
+index.localgw.js
+_本机测试版*
