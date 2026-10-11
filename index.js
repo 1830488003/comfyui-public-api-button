@@ -267,8 +267,8 @@ jQuery(async function () {
     /* 插件版本号。改完代码后这里会跟着变，
        如果设置面板里显示的还是旧号，说明浏览器加载的是缓存，
        需要硬刷新（Ctrl+Shift+R）。 */
-    var EXTENSION_VERSION = '1.23.0';
-    var EXTENSION_BUILD = '2026-10-11 05:51:25';
+    var EXTENSION_VERSION = '1.25.2';
+    var EXTENSION_BUILD = '2026-10-11 18:36:08';
 
     /* 暴露到 window，方便在控制台一键确认「浏览器到底加载了哪版代码」：
            __momoDrawPlugin.version      版本号
@@ -326,6 +326,15 @@ jQuery(async function () {
     /* 上一次出图时服务端装的是哪个模型。用来判断「模型刚被换过」，
        这时下次出图要重启 + 预热，提前告诉用户别以为卡住了。 */
     var lastGenModel = '';
+
+    /* 正在进行的「等待模型就绪」任务。
+       为什么要它：连点生图会并发走 generateForMessage，
+       每次都发一个 /v1/prepare-model，后台就会起多个重启线程互相打架
+       （一个在预热，另一个把 ComfyUI 杀了重来）。
+       这里保证同一个目标模型只跑一次，后续调用复用同一个 Promise。 */
+    var modelReadyWaiter = null;    // {model, promise}
+    /* 切换期间禁止再次出图 */
+    var modelSwitching = false;
     var lastKnownQuota = null;
     var lastQuotaFetchedAt = null;
     var queueState = 'offline';
@@ -2011,9 +2020,25 @@ jQuery(async function () {
         }
     }
 
-    /* 如果服务端还不是我们要的模型，就先触发切换、再等它切完。
-       返回 {waited: 是否等过, ok: 最终是否就绪, error}。 */
-    async function waitForModelReady(modelId, onStatus) {
+    /* 带去重的入口：同一目标模型只会有一个「等待+切换」任务在跑。
+       连点生图时，后面几次会复用第一次的 Promise，不会重复发切换命令。 */
+    function waitForModelReady(modelId, onStatus) {
+        if (modelReadyWaiter && modelReadyWaiter.model === modelId) {
+            console.log('[' + extensionName + '] 已有同一个模型的等待任务，'
+                + '复用它，不重复发切换命令');
+            return modelReadyWaiter.promise;
+        }
+        var promise = _waitForModelReadyInner(modelId, onStatus)
+            .finally(function () {
+                if (modelReadyWaiter && modelReadyWaiter.promise === promise) {
+                    modelReadyWaiter = null;
+                }
+            });
+        modelReadyWaiter = { model: modelId, promise: promise };
+        return promise;
+    }
+
+    async function _waitForModelReadyInner(modelId, onStatus) {
         var st = await fetchModelSwitchState();
         if (!st) return { waited: false, ok: true };
 
@@ -2023,6 +2048,10 @@ jQuery(async function () {
         /* 要等。先把话说清楚。 */
         var label = modelLabelOf(modelId);
         var eta = Math.max(60, Number(st.eta_seconds) || 150);
+
+        /* 标记「正在切换」，并禁用生图按钮，避免用户连点造成并发切换 */
+        modelSwitching = true;
+        setGenerateButtonsDisabled(true);
 
         /* ★ 关键：主动触发切换，别只是干等。
            不调这一步的话，服务端不会自己开始切 —— 双方会干等到超时。 */
@@ -2036,6 +2065,8 @@ jQuery(async function () {
             var triggered = await requestModelSwitch(modelId);
             if (triggered && triggered.already) {
                 /* 服务端说本来就是这个模型，不用等了 */
+                modelSwitching = false;
+                setGenerateButtonsDisabled(false);
                 return { waited: false, ok: true };
             }
             /* 等一下让服务端把 busy 置起来，避免第一轮轮询读到旧的 false */
@@ -2065,9 +2096,13 @@ jQuery(async function () {
                     onStatus('模型已就绪（' + Math.round((Date.now() - started) / 1000)
                         + ' 秒），开始出图…');
                 }
+                modelSwitching = false;
+                setGenerateButtonsDisabled(false);
                 return { waited: true, ok: true };
             }
             if (!cur.busy && cur.error) {
+                modelSwitching = false;
+                setGenerateButtonsDisabled(false);
                 return { waited: true, ok: false, error: cur.error };
             }
             if (onStatus && cur.busy) {
@@ -2077,7 +2112,19 @@ jQuery(async function () {
                     + '…');
             }
         }
+        modelSwitching = false;
+        setGenerateButtonsDisabled(false);
         return { waited: true, ok: false, error: '等待模型切换超时' };
+    }
+
+    /* 统一切换生图按钮的可用状态。切换模型期间禁用，
+       防止用户连点导致并发切换（这是之前的 bug 根因）。 */
+    function setGenerateButtonsDisabled(disabled) {
+        try {
+            $('.cpab-mes-button, .cpab-random-button, .cpab-optimize-button')
+                .prop('disabled', !!disabled)
+                .toggleClass('is-waiting-model', !!disabled);
+        } catch (error) { /* 忽略 */ }
     }
 
     /* 把「连接被强制关闭」这类底层错误翻译成人话 */
@@ -2105,6 +2152,11 @@ jQuery(async function () {
         var genOptions = readGenerationOptions();
         var request = buildGenerationRequest(messageId, mode || 'normal');
         request.payload.prompt = prompt;
+        /* 正在切换模型时不允许再发起出图（避免并发切换） */
+        if (modelSwitching) {
+            showToast('info', '正在切换模型，请等切换完成后再点生成', 6000);
+            throw new Error('正在切换模型，请稍候');
+        }
         setButtonState($button, 'is-loading', request.actionLabel + '中');
         await refreshQueueStatus(true);
         setStatus('楼层 ' + messageId + '：' + request.actionLabel + '，服务器前方 '

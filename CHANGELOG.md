@@ -1,6 +1,122 @@
 # 默默画图更新日志
 
 
+## 1.25.2 - 2026-10-11
+
+### 网页版「当前在线模型」改成每 5 秒自动刷新
+
+**问题**：只在页面加载时读一次 `/v1/models`。
+服务器被别的用户切换了模型后，页面显示的「当前在线」还是旧值，
+要手动刷新页面才更新。
+
+**改法**：
+- 新增 `MODEL_POLL_MS = 5000` 和 `refreshModelState()`
+- **只更新已有 option 的文案 + 提示条，不重建下拉** ——
+  整个重建会打断用户正在进行的操作（选项被重置）
+- 页面在后台时（`document.hidden`）跳过这一轮，省流量省电
+- 从后台切回前台时立刻刷一次，不用等下一个 5 秒
+
+---
+
+## 1.25.1 - 2026-10-11
+
+### 修「刚热好的模型被关掉重装」
+
+**现象**：切到 Qwen-Image 2.1 并等它预热完（约 2 分钟），
+刷新页面后一点生成，又把 2.1 关掉重新装回 zturbo。
+
+**根因**：网页版模型下拉的默认值优先级里**没有「当前在线」**：
+```js
+var want = currentModelId() || def || models[0].id;
+//                            ↑ config.json 的 default_model = zturbo
+```
+用户没手动选过时，下拉就回到 zturbo，一点生成就触发切换。
+
+**改法**：把「服务端当前在线的模型」插到第二优先：
+```js
+var want = currentModelId()          // ① 用户明确选过的
+  || serverCurrentModel              // ② 当前在线的 ← 新增，避免无谓切换
+  || def                             // ③ config 默认
+  || models[0].id;                   // ④ 列表第一个
+```
+
+现在刷新页面后，下拉永远和当前在线的模型一致。
+
+---
+
+## 1.25.0 - 2026-10-11
+
+### 网页版补齐三项（和酒馆插件对齐）
+
+**问题**：网页版（`/draw`）一直只能用服务端默认模型，
+也看不到用了多久、现在服务器跑的是哪个模型。
+
+**改动**：
+
+1. **新增「画图模型」下拉** —— 可选 Z-Image-Turbo（快）/ Qwen-Image 2.1（高画质）。
+   选项后面标注「（当前在线）」，用户一眼看出要不要等切换。
+   换模型时自动刷新画质档位（两个模型的档位不同：4/6/8 vs 20/30/40）。
+
+2. **切模型时显示等待进度** —— 出图前先读 `/v1/model-state`：
+   - 模型一致 → 直接出图
+   - 不一致 → 弹「正在切换模型到「X」，约需 N 分钟」，
+     每 3 秒轮询，就绪后立刻出图
+   - 连点不会重复触发（同一目标只跑一个任务）
+
+3. **显示用时和当前在线模型**
+   - 出错图后在图片信息里显示「用时 N 秒 · 模型 X」
+   - 画图页常驻一行「当前在线：X」，若选的和在线的不一致会提示会自动切换
+   - 计时从**真正开始出图**那一刻算起，不把切换模型等的那两分钟算进去
+
+**新增常量/函数**：`availableModels`、`serverCurrentModel`、`modelWaiter`、
+`currentModelId()`、`renderModelSelect()`、`modelLabelById()`、
+`fetchModelState()`、`waitForModelReady()`、`friendlyNetError()`、
+`renderCurrentModelHint()`。
+
+---
+
+## 1.24.0 - 2026-10-11
+
+### 修「切模型 2 秒就报 ConnectionResetError，但后台还在切换」
+
+**根因**：`http_json` 只捕 `HTTPError` / `URLError`，
+但 `urlopen` 在 Windows 上还会**裸抛** socket 层异常
+（`ConnectionResetError` 10054 / `ConnectionAbortedError` / `TimeoutError`）。
+
+触发时机：`_stop_comfyui_hard()` 杀掉 ComfyUI 后紧接着探测它在不在线，
+TCP 连接被重置 → 裸异常打穿整条重启流程。
+
+**改法**：
+- `http_json` 增加 `except (ConnectionError, OSError)`
+- `comfyui_online()` 兜住**所有**异常（探测函数不能往外抛）
+- `_stop_comfyui_hard()` 每步都防住
+- 预热前再确认一次 ComfyUI 还在
+
+### 修「连点生图导致切换命令重复发送」
+
+连点几次会发多个 `/v1/prepare-model`，后台多线程互相杀进程，
+预热跑到一半被另一个线程重启掉。
+
+**改法（三层）**：
+- 插件：`modelReadyWaiter`，同一目标模型只跑一个任务，后续复用 Promise
+- 插件：切换期间禁用生图按钮，再点直接拒绝
+- 网关：`start_model_switch` 检测 busy 就返回「已在进行」
+
+### 修「切模型时自动弹浏览器」
+
+**根因**：ComfyUI 的 `cli_args.py` 里有
+```python
+if args.windows_standalone_build:
+    args.auto_launch = True          # 默认开浏览器
+```
+我们用了 `--windows-standalone-build`，所以每次重启都弹网页。
+
+**改法**：`run_intel_gpu.bat` 加 `--disable-auto-launch`。
+
+现在：桌面「启动全部」开一次网页；切模型重启不开网页。
+
+---
+
 ## 1.22.0 - 2026-10-11
 
 ### 修「切模型只等待、不切换」（死锁）
