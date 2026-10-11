@@ -126,15 +126,15 @@
           <div class="cpab-res-note" id="cpab-res-note">高清档（720p）生成慢约 10 秒，每次消耗 2 次额度；普通档消耗 1 次。</div>
         </div>
         <div>
-          <label for="cpab-steps">步数</label>
+          <label for="cpab-steps">画质</label>
           <select id="cpab-steps" class="text_pole">
             <option value="4" selected>4</option>
             <option value="6">6</option>
             <option value="8">8</option>
           </select>
           <div class="cpab-res-note" id="cpab-steps-note">
-                  步数只对当前模型有效（4 最快，8 最细）。<br>
-                  可选的步数由服务器按模型下发，改模型后这一项会自动跟着变。
+                  画质只对当前模型有效（低最快，高最精细）。<br>
+                  具体档位由服务器按模型下发（Z-Image 是 4/6/8 步，Qwen-Image-2.1 是 20/30/40 步），改模型后会自动跟着变。
                 </div>
         </div>
       </div>
@@ -156,8 +156,21 @@
         <p class="cpab-instruction-intro">
           上面那条「绘图指令」就是插件发给 AI 的一段话，用来告诉 AI：<b>正文写完后，在结尾附上一段绘画提示词</b>。
           插件再从回复里把这段提示词抠出来去生图。<br>
-          所以——<b>这段内容决定 AI 画什么、怎么描述</b>。你可以让它更贴合自己的用法，
-          比如换一种画面侧重、要求更详细或更精简的外貌描写、指定只画某类场景。
+          所以——<b>这段内容决定 AI 画什么、怎么描述</b>。
+        </p>
+        <p class="cpab-instruction-intro">
+          <b>插件内置了两套提示词，分别对应两个画图模型。</b>
+          两个模型对提示词的要求正好相反（一个要简洁、一个要详细），所以不能混用：
+        </p>
+        <label for="cpab-prompt-model">提示词版本</label>
+        <select id="cpab-prompt-model" class="text_pole">
+          <option value="zturbo">Z-Image（简洁）</option>
+          <option value="qwen21">Qwen-Image 2.1（详细）</option>
+        </select>
+        <p class="cpab-instruction-intro" id="cpab-prompt-model-note"></p>
+        <p class="cpab-instruction-intro">
+          切换上面的「画图模型」时会<b>自动跟随</b>；你也可以在这里手动指定。
+          选定之后，下面的编辑、世界书安装、世界书下载都只作用于这一套。
         </p>
         <details class="cpab-instruction-why">
           <summary>什么情况下需要改？（点开看例子）</summary>
@@ -193,7 +206,10 @@
         <p class="cpab-instruction-intro">
           插件默认用「自动注入」把上面那段指令发给 AI。万一你的酒馆版本比较老、
           拿不到自动注入的接口，就可以改用这里的<strong>世界书方式</strong>——
-          一键把同一段指令写成本地世界书并<strong>自动全局启用</strong>，效果完全一样。
+          一键把<strong>当前提示词版本</strong>那段指令写成本地世界书并<strong>自动全局启用</strong>，效果完全一样。<br>
+          <strong>两个版本各是一本世界书</strong>（<code>默默画图世界书-zturbo</code> /
+          <code>默默画图世界书-qwen21</code>），切版本时会自动只启用对应的那本，
+          不会两本同时生效。
         </p>
         <p class="cpab-instruction-intro">
           <strong>注意</strong>：两种方式同时开启会让同一段指令出现两次、白占字数，

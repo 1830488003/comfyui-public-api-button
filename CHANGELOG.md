@@ -1,5 +1,233 @@
 # 默默画图更新日志
 
+
+## 1.22.0 - 2026-10-11
+
+### 修「切模型只等待、不切换」（死锁）
+
+**现象**：切模型后弹「约需 2 分钟」，然后干等 3 分钟，模型没换、图也没画。
+
+**根因**：插件只轮询 `/v1/model-state`，**从没告诉网关去切模型**；
+而网关只在收到 `/v1/generate` 时才切 → 双方互等。
+
+**改法**：
+- **网关新增** `POST /v1/prepare-model`：立刻返回 202，真正的重启+预热
+  放到后台线程跑，不占用 HTTP 连接
+- **插件新增** `requestModelSwitch()`：等待前先调它把切换启动起来
+- 后台线程入口 `_do_switch_in_background()`：任何异常都写进切换状态
+
+### 修「接口不存在」（404）——路由插错了 HTTP 方法
+
+`/v1/prepare-model` 被插进了 `do_GET`（因为锚点在两处都出现），
+而插件发的是 POST。已搬到 `do_POST` 并修正缩进。
+
+### 修「切换失败原因显示 WinError 10054」
+
+`restart_comfyui` 没有整体异常保护，任何一步抛异常就跳过 `_switch_finish`，
+状态会卡在 `busy=True` 或留下底层 socket 报错。
+
+**改法**：函数体改名 `_restart_comfyui_inner`，外面套一层兜底：
+```python
+try:
+    return _restart_comfyui_inner(...)
+except Exception as exc:
+    traceback.print_exc()
+    _switch_finish(False, f"重启过程出错（{type(exc).__name__}）")
+    return False
+```
+
+**通用原则**：任何「开始-结束」配对的状态机，结束必须保证被调用。
+
+---
+
+## 1.21.0 - 2026-10-11
+
+### 修「切换模型后点生成，弹 WinError 10054」
+
+**现象**：切模型后点生成，弹窗写
+[WinError 10054] 远程主机强迫关闭了一个现有的连接。
+
+**根因**：换模型要重启 ComfyUI + 重新预热（约 2 分钟），
+POST /v1/generate 的连接一直空闲，被中间层掐断。
+客户端拿到的是底层 socket 错误，用户看不懂。
+
+**改法：不让连接空闲，改成轮询等待**
+
+- **网关新增** GET /v1/model-state：返回 busy / target / eta_seconds /
+  elapsed_seconds / remaining_seconds / current / done / error
+- **插件新增** waitForModelReady()：出图前先问一次
+  - 模型一致且不在切换 → 直接出图（零等待）
+  - 否则弹「正在切换模型到「X」，约需 2 分钟，请稍等」，
+    每 3 秒轮询，就绪后**立刻**发图
+- **showToast 支持自定义时长**：切模型这类提示默认几秒就消失，
+  用户根本看不到
+- **底层连接错误翻译成人话**：10054 / ECONNRESET / 强迫关闭 →
+  「连接被中断（多半是在切换模型）。换模型需要约 2 分钟，请稍后再试一次。」
+
+**效果**：切模型时用户看到的是明确的等待提示和进度，
+切好之后第一时间出图，不会白等也不会看到天书报错。
+
+---
+
+## 2026-10-11 · 修「切模型后一本世界书都挂不上」
+
+### 现象
+切到 Qwen-Image 2.1 后提示「已切换到…绘图提示词已自动换成对应版本」，
+但酒馆「已启用的世界（全局有效）」显示 **No Worlds active**——
+一本都没挂上。手动点「安装为世界书并全局启用」按钮却能正常挂。
+
+### 根因
+手动按钮走的是：**写世界书文件 → 挂到全局**。
+切模型走的自动路径**只挂了、没写文件** —— 而 TavernHelper 会因为
+「找不到这个名字」拒绝挂载一个不存在的世界书，于是什么都挂不上。
+
+（前面刚修的那两个问题——检测条件太窄、列表没刷新——是真的，
+但它们都只在「世界书文件已存在」时才起作用。这次是把最后一环补上。）
+
+### 改法
+- **新增 `writeWorldbookFile(model)`** 公共函数：写文件 + 刷新世界书列表
+  + 返回 `{ok, reason}` 便于定位失败原因
+- **`autoMountForCurrentModel` 改成三步**：
+  ① 写文件 → ② 挂到全局并回读确认 → ③ 收口只留当前版本
+- **`installWorldbook` 复用同一个函数**，去掉重复的写文件代码
+  → 手动和自动两条路径现在干的事完全一致
+
+### 完整链路（两条路一样）
+```
+写世界书文件 → 刷新酒馆世界书列表 → 挂到全局
+            → 回读确认 → 收口（移出其它版本）→ 按真实结果弹窗
+```
+
+---
+
+## 2026-10-11 · 修「世界书切换不掉，两本同时挂在全局」
+
+### 现象
+从 qwen21 切回 zturbo 时提示「已挂载全局成功」，
+但酒馆「已启用的世界（全局有效）」里仍然是
+`默默画图世界书-qwen21`，**没有换成 zturbo**。
+
+### 真实根因（读 JS-Slash-Runner 的 dist 源码得出）
+
+**根因 1 —— TavernHelper 的写入会被拒绝**
+
+```js
+function uH(e){                          // = setLorebookSettings
+    if(e.selected_global_lorebooks){
+        let t = e.selected_global_lorebooks.filter(e => !lt.includes(e));
+        if(t.length > 0)
+            throw Error(`尝试修改要全局启用的世界书, 但未找到以下世界书: ...`)
+    }
+    ...
+}
+```
+`lt` 是「酒馆已知的世界书文件列表」，由 `/api/settings/get` 的 `world_names` 填充。
+我们刚用 `/api/worldinfo/edit` 写完新文件时，`lt` 还没刷新 ——
+于是 TavernHelper 抛错拒绝，挂载失败，旧世界书留在全局。
+
+**根因 2 —— 检测条件太窄**
+
+`getTavernHelper()` 只检测 `setLorebookSettings` 是否存在。
+缺这个函数（版本差异）时就放弃 TavernHelper、退回只写运行时模块，
+而运行时模块管不到 TavernHelper 的内部状态。
+（本机 `my-world-book-momo` 检测的是 `getLorebooks`。）
+
+**根因 3 —— 读取取并集**
+
+`readGlobalSelectAny` 把 TavernHelper / 运行时 / 已保存设置三处取并集。
+并集会让「实际不在列表里的名字」被当成在里面，替换时删不掉它。
+
+### 修法
+
+1. **检测放宽**：只要 TavernHelper 暴露任一世界书函数就认它
+   （`setLorebookSettings` / `getLorebookSettings` / `getLorebooks` /
+   `replaceLorebookEntries` / `createLorebook` / `deleteLorebook`）
+2. **新增 `syncTavernWorldNames()`**：写之前拉一次 `/api/settings/get`，
+   把 `world_names` 同步过去（TavernHelper 内部也是这么刷的）
+3. **写入失败自动重试**：先刷新列表再试一遍
+4. **新增事件总线兜底 `writeGlobalSelectViaEvents()`**：
+   TavernHelper 写不了时，就地改 `world_info.globalSelect` 并发
+   `worldinfo_updated` 事件（官方事件，酒馆会自己读）
+5. **读来源不再取并集**：TavernHelper 能读就以它为准
+6. **新增 `realignGlobalWorldbook()`**：安装 / 切模型 / 启动自愈三处都调用，
+   最后收口确保全局里只剩当前版本那一本，改完回读确认
+7. **清理旧版单本**：`默默画图世界书.json` 已被两本取代，
+   移到 `data/default-user/_世界书备份-<时间戳>/`
+
+### 现在的行为
+切模型 → 提示词自动跟随 → 自动挂对应那本世界书 →
+另一本自动移出 → 改完回读确认 → 按真实结果弹窗。
+
+---
+
+## 2026-10-11 · 世界书自动挂载 + 提示词自动跟随
+
+### 修的 bug
+`installWorldbook` 只信 TavernHelper 的返回值，**从不回读验证**。
+helper 报 ok 但实际没写进去时，就误报「已启用」——
+表现为「安装按钮点了、提示成功，可世界书看着没挂上」。
+
+### 改法：所有挂载操作都回读验证
+- **新增** `readGlobalSelectAny()`：从 TavernHelper / world-info 运行时 /
+  已保存设置三处读，取并集（两份不同步时不会漏掉用户已有的世界书）
+- **新增** `writeGlobalSelectAny()`：往三处都写
+- **新增** `ensureGlobalWorldbook(name, enable)`：写入 → 回读确认 → 最多重试 3 次
+  （世界书文件刚写完时酒馆可能还没读进内存，第一次挂常失败）
+- `isWorldbookActive()` 改用同一套「读所有来源」逻辑，
+  不再出现「写进了 A 来源、却按 B 来源显示未启用」的矛盾
+- `uninstallWorldbook()` 简化为逐个 ensureGlobalWorldbook(name, false)
+
+### 新增：选了模型就自动搞定提示词和世界书
+原来用户选完画图模型，还得手动去选「提示词版本」，太麻烦。
+现在切模型时：
+1. **提示词版本自动跟随**该模型，无需手动选
+2. **自动把对应那本世界书挂到全局**（另一本自动移出，避免指令重复）
+3. **弹窗告知真实结果**：
+   - 挂上了 → 已挂载全局成功：默默画图世界书-xxx
+   - 没挂上 → 挂载全局失败，请在设置里下载世界书手动挂载到全局
+     （设置面板同时显示详细手动步骤）
+4. **刷新页面能自愈**：启动时若检测到「用的是世界书方式、但当前版本那本没挂上」，
+   会安静地再试一次，成功不弹窗
+
+---
+
+## 2026-10-11 · 徽标改成多行 + 出图计时
+
+原来徽标是单行，内容越堆越长（前方N + 当前模型 + 高清扣费），
+手机上会被截断；而且看不到出图到底用了多久。
+
+- **徽标改成多行显示**（CSS flex-direction: column）：
+  第 1 行 前方排队 + 当前模型
+  第 2 行 高清扣费（有才显示）
+  第 3 行 上次出图耗时（有才显示）
+  第 4 行 模型刚被换掉的提示（只在换了模型时出现）
+- **新增出图计时**：从提交请求到图注入楼层（含压缩+上传），
+  完成后显示在徽标、状态栏和右上角提示里
+  30 秒以内保留一位小数，以上取整
+- **新增「模型已切换，下次会慢一些」提示**：
+  上次出图用的模型 ≠ 当前装的模型时出现，
+  提前告诉用户下次要等重启+预热，别以为卡住了
+- 徽标加 title 提示，鼠标悬停能看到完整文字
+
+---
+
+## 2026-10-11 · 双版本绘图提示词 + 双世界书
+
+绘图指令原来只有一套（为 Z-Image 设计的简洁版），
+但 Qwen-Image 2.1 需要详细得多的提示词，两套要求正好相反。
+
+- **新增** 提示词文件 `drawing-instruction-qwen21.txt`（详细版，针对 Qwen-Image 2.1）
+- **改名** `drawing-instruction.txt` → `drawing-instruction-zturbo.txt`
+- **新增** 设置项 `promptModel` / `drawingInstructionByModel`
+  （按模型分别保存自定义内容，空 = 用该模型的内置推荐版）
+- **新增** 设置面板「提示词版本」下拉框，切换画图模型时自动跟随
+- **新增** 双世界书：`默默画图世界书-zturbo` / `默默画图世界书-qwen21`
+  切版本时自动只启用对应那本，避免指令重复
+- **兼容** 旧设置 `drawingInstruction` 首次加载时自动迁移到 zturbo 那一份
+- **修复** 编辑框字数统计、保存、恢复默认都改为只作用于当前版本
+
+---
+
 ## 1.18.0 - 2026-10-10
 
 - **自建服务器：页面在本机时直连本机网关，不再绕公网。**

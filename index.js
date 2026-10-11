@@ -101,15 +101,37 @@ jQuery(async function () {
         var list = stepsForModel(mid);
         return list.length ? list[list.length - 1] : defaultSettings.steps;
     }
-    /* 重建步数下拉：只列出当前模型允许的步数 */
+    /* 画质档位的显示名。界面上只给用户看「低/中/高」，
+       背后的真实步数由服务端按模型给（见 stepsForModel）。
+       Z-Image 是 4/6/8，Qwen-Image-2.1 是 20/30/40，
+       直接显示数字会让用户一头雾水，所以统一叫「画质」。 */
+    var QUALITY_LABELS = ['低（最快）', '中（均衡）', '高（最精细）'];
+    function qualityLabelOf(list, index) {
+        return QUALITY_LABELS[index] || (String(list[index]) + ' 档');
+    }
+    /* 取当前模型的「下一档」步数，用于固定种子微调 */
+    function nextQualityStep(modelId, step) {
+        var list = stepsForModel(modelId);
+        var n = Number(step);
+        var i = list.indexOf(n);
+        if (i < 0) {
+            for (var k = 0; k < list.length; k++) {
+                if (list[k] > n) return list[k];
+            }
+            return null;
+        }
+        return i + 1 < list.length ? list[i + 1] : null;
+    }
+    /* 重建画质下拉：只列出当前模型允许的档位 */
     function renderStepsSelect() {
         var $sel = $('#cpab-steps');
         if (!$sel.length) return;
         var list = currentAllowedSteps();
         var want = normalizeSteps(settings.steps);
         $sel.empty();
-        list.forEach(function (n) {
-            $sel.append($('<option></option>').val(String(n)).text(String(n)));
+        list.forEach(function (n, i) {
+            $sel.append($('<option></option>').val(String(n))
+                .text(qualityLabelOf(list, i)));
         });
         if (list.indexOf(want) < 0) want = defaultStepsForModel(settings.model);
         $sel.val(String(want));
@@ -231,10 +253,63 @@ jQuery(async function () {
         autoGenerate: true,
         stylePreset: 'anime-key-visual',
         injectDrawingInstruction: true,
-        /* 用户自定义的绘图指令。留空 = 用插件内置的推荐版本。
+        /* 用哪一套绘图提示词。两套内置版本分别针对两个画图模型：
+               zturbo —— Z-Image Turbo，提示词简洁即可
+               qwen21 —— Qwen-Image 2.1，提示词要详细（外貌/服装/位置/光源）
+           切换画图模型时会自动跟随；用户也可以手动指定。 */
+        promptModel: 'zturbo',
+        /* 用户自定义的绘图指令，按模型分别存。留空 = 用该模型的内置推荐版本。
            存在扩展设置里，会随酒馆的设置一起保存（开了服务端设置就能跨设备同步）。 */
+        drawingInstructionByModel: { zturbo: '', qwen21: '' },
+        /* 旧字段（单版本时代）。保留只为兼容老设置，读取时不再使用。 */
         drawingInstruction: ''
     };
+    /* 插件版本号。改完代码后这里会跟着变，
+       如果设置面板里显示的还是旧号，说明浏览器加载的是缓存，
+       需要硬刷新（Ctrl+Shift+R）。 */
+    var EXTENSION_VERSION = '1.23.0';
+    var EXTENSION_BUILD = '2026-10-11 05:51:25';
+
+    /* 暴露到 window，方便在控制台一键确认「浏览器到底加载了哪版代码」：
+           __momoDrawPlugin.version      版本号
+           __momoDrawPlugin.build        构建时间
+           await __momoDrawPlugin.diag()      打印世界书诊断
+           await __momoDrawPlugin.testMount() 手动跑一次自动挂载
+       如果 __momoDrawPlugin 是 undefined，说明浏览器还在用缓存，硬刷新即可。 */
+    try {
+        if (typeof window !== 'undefined') {
+            window.__momoDrawPlugin = {
+                version: EXTENSION_VERSION,
+                build: EXTENSION_BUILD,
+                diag: function () {
+                    var out = [];
+                    var push = function (s) { out.push(s); };
+                    push('插件版本: ' + EXTENSION_VERSION + '  (build ' + EXTENSION_BUILD + ')');
+                    push('当前提示词版本: ' + currentPromptModel()
+                        + '  (' + promptModelLabel(currentPromptModel()) + ')');
+                    push('用世界书方式: ' + (settings.injectDrawingInstruction === false));
+                    push('目标世界书: ' + worldbookNameOf(currentPromptModel()));
+                    return readGlobalSelectAny().then(function (cur) {
+                        push('全局启用列表: ' + JSON.stringify(cur.list));
+                        push('读到来源: ' + JSON.stringify(cur.sources));
+                        push('待挂世界书: ' + (pendingWorldbookName || '(无)'));
+                        var th = getTavernHelper();
+                        push('TavernHelper: ' + (th ? '可用' : '不可用'));
+                        push('能写全局: ' + tavernHelperCanSetGlobal(th));
+                        console.log('[默默画图诊断] ' + out.join(' | '));
+                        return out;
+                    });
+                },
+                /* 手动触发一次「切模型该做的事」，用于排查自动流程 */
+                testMount: function () {
+                    return autoMountForCurrentModel().then(function () {
+                        console.log('[默默画图] testMount 执行完，请看弹窗和状态行');
+                    });
+                },
+            };
+        }
+    } catch (error) { /* 暴露失败不影响功能 */ }
+
     var contextGetter = function () {
         return window.SillyTavern && window.SillyTavern.getContext
             ? window.SillyTavern.getContext()
@@ -243,6 +318,14 @@ jQuery(async function () {
     var extensionSettingsRoot = window.extension_settings || {};
     extensionSettingsRoot[extensionName] = extensionSettingsRoot[extensionName] || {};
     var lastQueueAhead = 0;
+    /* 服务端当前装着的模型 id（来自 /v1/status 的 queue.current_model） */
+    var lastCurrentModel = '';
+    /* 上一次出图用了多少秒，以及什么时候完成的（徽标上显示） */
+    var lastGenSeconds = null;
+    var lastGenSecondsAt = 0;
+    /* 上一次出图时服务端装的是哪个模型。用来判断「模型刚被换过」，
+       这时下次出图要重启 + 预热，提前告诉用户别以为卡住了。 */
+    var lastGenModel = '';
     var lastKnownQuota = null;
     var lastQuotaFetchedAt = null;
     var queueState = 'offline';
@@ -345,16 +428,21 @@ jQuery(async function () {
         for (var i = 0; i < availableModels.length; i++) {
             if (availableModels[i].id === normalizeModel(settings.model)) { m = availableModels[i]; break; }
         }
-        /* 说明文字改成按「服务端实际给了什么」动态生成，
-           不再写死 qwen21——那个模型已经下架，
-           以后服务端加模型这里也不用改。 */
+        /* 说明文字按「服务端实际给了什么」动态生成，
+           以后服务端加模型或改步数，这里不用动。 */
         var base = '切换模型时服务器会自动卸载上一个模型再载入新的，第一次用新模型会慢一些。';
         if (m) {
             var list = stepsForModel(m.id);
             var locked = list.length === 1;
-            base += ' 当前选的是「' + m.label + '」：' + (locked
-                ? ('固定 ' + list[0] + ' 步（步数设置对它无效）。')
-                : ('步数可选 ' + list.join(' / ') + '，数值越小越快。'));
+            if (locked) {
+                base += ' 当前选的是「' + m.label + '」：画质固定，三档对它无效。';
+            } else {
+                var pairs = list.map(function (n, i) {
+                    return qualityLabelOf(list, i).replace(/（.*）/, '') + '＝' + n + '步';
+                });
+                base += ' 当前选的是「' + m.label + '」：画质可选 '
+                    + pairs.join('，') + '。画质越高越慢。';
+            }
         }
         $note.text(base);
     }
@@ -540,9 +628,17 @@ jQuery(async function () {
         }
     }
 
-    function showToast(type, message) {
+    /* 弹右上角提示。
+       durationMs 可选：切换模型这类「要等两分钟」的提示需要显示久一点，
+       默认 toastr 几秒就没了，用户来不及看。 */
+    function showToast(type, message, durationMs) {
         if (window.toastr && window.toastr[type]) {
-            window.toastr[type](message, '默默画图');
+            var opts = { closeButton: true };
+            if (durationMs && Number(durationMs) > 0) {
+                opts.timeOut = Number(durationMs);
+                opts.extendedTimeOut = Math.min(Number(durationMs), 10000);
+            }
+            window.toastr[type](message, '默默画图', opts);
         } else {
             console[type === 'error' ? 'error' : 'log'](message);
         }
@@ -1397,25 +1493,81 @@ jQuery(async function () {
         }
     }
 
-    function queueText() {
-        return queueState === 'offline' ? '队列离线' : '前方 ' + lastQueueAhead;
+    /* 当前模型徽标：让用户一眼看到服务器现在跑的是哪个模型，
+       自己判断要不要换（换模型要重启 ComfyUI + 重新预热，比较慢）。 */
+    function modelLabelOf(modelId) {
+        for (var i = 0; i < availableModels.length; i++) {
+            if (availableModels[i].id === modelId) {
+                return availableModels[i].label || modelId;
+            }
+        }
+        return modelId || '';
+    }
+    /* 把秒数写成好读的形式：30 秒以内保留一位小数，以上取整 */
+    function formatGenSeconds(sec) {
+        var n = Number(sec);
+        if (!isFinite(n) || n <= 0) return '';
+        return (n < 30 ? n.toFixed(1) : String(Math.round(n))) + 's';
     }
 
-    /* 高清档在楼层徽标上直接标出消耗，用户不用翻设置也知道这次要花 2 次 */
-    function queueTextWithCost() {
-        var base = queueText();
-        var cost = creditCostOf(settings.resolution);
-        if (cost > 1) {
-            return base + ' · 高清扣 ' + cost + ' 次';
+    /* 徽标正文：多行显示，手机上不会挤成一长条被截断。
+       第 1 行 前方排队 + 当前模型
+       第 2 行 高清扣费（有才显示）
+       第 3 行 上次出图耗时（有才显示）
+       第 4 行 模型刚被换掉的提示（只在「上次出图用的模型 ≠ 现在装的模型」时出现，
+              这时下次出图要重启 + 预热，提前告诉用户别以为卡住了） */
+    function queueBadgeLines() {
+        var lines = [];
+        if (queueState === 'offline') {
+            lines.push('队列离线');
+            return lines;
         }
-        return base;
+        var l1 = '前方 ' + lastQueueAhead;
+        if (lastCurrentModel) { l1 += ' · 当前 ' + modelLabelOf(lastCurrentModel); }
+        lines.push(l1);
+
+        var cost = creditCostOf(settings.resolution);
+        if (cost > 1) { lines.push('高清扣 ' + cost + ' 次'); }
+
+        var secs = formatGenSeconds(lastGenSeconds);
+        if (secs) { lines.push('上次用时 ' + secs); }
+
+        if (lastGenModel && lastCurrentModel && lastGenModel !== lastCurrentModel) {
+            lines.push('模型已切换，下次会慢一些');
+        }
+        return lines;
+    }
+
+    /* 单行版：给设置面板里那行状态文字用（那里地方够，不挤） */
+    function queueText() {
+        return queueBadgeLines().join(' · ');
+    }
+
+    /* 兼容旧调用点 */
+    function queueTextWithCost() {
+        return queueText();
+    }
+
+    /* 把多行文案写进徽标；一行一个 div，CSS 负责纵向排列 */
+    function renderBadgeContent($el, lines) {
+        $el.empty();
+        lines.forEach(function (line) {
+            $el.append($('<div class="cpab-queue-line"></div>').text(line));
+        });
     }
 
     function updateQueueBadges() {
-        var stateClass = queueState === 'offline' ? 'is-offline' : (lastQueueAhead > 0 ? 'is-busy' : 'is-idle');
-        var text = queueTextWithCost();
-        $('.cpab-queue-badge').removeClass('is-idle is-busy is-offline').addClass(stateClass).text(text);
-        $('#cpab-queue-status').removeClass('is-idle is-busy is-offline').addClass(stateClass).text('服务器队列：' + text);
+        var stateClass = queueState === 'offline' ? 'is-offline'
+            : (lastQueueAhead > 0 ? 'is-busy' : 'is-idle');
+        var lines = queueBadgeLines();
+        $('.cpab-queue-badge').removeClass('is-idle is-busy is-offline')
+            .addClass(stateClass)
+            .attr('title', lines.join('\n'));
+        $('.cpab-queue-badge').each(function () {
+            renderBadgeContent($(this), lines);
+        });
+        $('#cpab-queue-status').removeClass('is-idle is-busy is-offline')
+            .addClass(stateClass).text('服务器队列：' + lines.join(' · '));
     }
 
     async function refreshQueueStatus(silent) {
@@ -1429,6 +1581,11 @@ jQuery(async function () {
         try {
             var data = await apiRequest('/v1/status', { method: 'GET' });
             lastQueueAhead = Math.max(0, Number(data.queue && data.queue.ahead) || 0);
+            /* 服务端会在 queue 里带上当前装着的模型（gateway 读 model_state.txt）。
+               只有服务端明确给了才更新，拿不到就保留上一次的值，避免闪成空。 */
+            if (data.queue && data.queue.current_model) {
+                lastCurrentModel = String(data.queue.current_model);
+            }
             queueState = 'online';
             updateQueueBadges();
         } catch (error) {
@@ -1515,7 +1672,7 @@ jQuery(async function () {
             $target.append('<div class="mes_button cpab-random-button" role="button" tabindex="0" title="随机重绘"><i class="fa-solid fa-rotate"></i></div>');
         }
         if (!$target.find('.cpab-optimize-button').length) {
-            $target.append('<div class="mes_button cpab-optimize-button" role="button" tabindex="0" title="固定种子，步数 +2 优化（最高 8 步）"><i class="fa-solid fa-wand-magic-sparkles"></i></div>');
+            $target.append('<div class="mes_button cpab-optimize-button" role="button" tabindex="0" title="固定种子，把画质提一档"><i class="fa-solid fa-wand-magic-sparkles"></i></div>');
         }
         if (!$target.find('.cpab-queue-badge').length) {
             $target.append('<span class="cpab-queue-badge" title="当前提交任务前预计需要等待的任务数"></span>');
@@ -1796,14 +1953,144 @@ jQuery(async function () {
             if (!Number.isFinite(Number(last.seed))) throw new Error('找不到上一次生成的 seed');
             if (!Number.isFinite(Number(last.steps))) throw new Error('找不到上一次生成的步数');
             payload.seed = Number(last.seed);
-            payload.steps = Math.min(8, Number(last.steps) + 2);
-            actionLabel = '固定 seed 优化（' + last.steps + ' → ' + payload.steps + ' 步）';
+            /* 把画质提一档（不是固定 +2）：Z-Image 是 4/6/8，
+               Qwen-Image-2.1 是 20/30/40，增量按模型自己的表走 */
+            var nextStep = nextQualityStep(normalizeModel(settings.model), last.steps);
+            if (!nextStep) throw new Error('已经是最高画质档，无法再往上提');
+            payload.steps = nextStep;
+            actionLabel = '固定 seed 优化（画质 ' + last.steps + ' → ' + nextStep + '）';
         }
         // 把本次要消耗的次数写进按钮提示，高清档会显示「扣 2 次」
         if (options.cost > 1) {
             actionLabel += '｜高清扣 ' + options.cost + ' 次';
         }
         return { payload: payload, actionLabel: actionLabel };
+    }
+
+    /* -------------------- 等服务端模型就绪 --------------------
+
+      为什么要这个：
+        换模型要重启 ComfyUI + 重新预热，约 2 分钟。
+        如果直接发 /v1/generate，连接会空闲两分钟，
+        中间层（Windows / Cloudflare）会把它掐断，
+        用户看到的是「WinError 10054 远程主机强迫关闭了一个现有的连接」，
+        完全看不懂，还以为插件坏了。
+
+      做法：
+        先问服务端「现在要切模型吗」。要切就弹一句人话，
+        然后轮询 /v1/model-state，等服务端说好了，再发真正的出图请求。
+        这样连接一直是活跃的，不会被掐断，而且切好之后第一时间就出图。
+       ------------------------------------------------------------ */
+
+    /* 是否正在切换模型（顺便把状态记下来给徽标用） */
+    async function fetchModelSwitchState() {
+        try {
+            var data = await apiRequest('/v1/model-state', { method: 'GET' });
+            return (data && data.state) || null;
+        } catch (error) {
+            return null;   /* 拿不到就当没在切，别挡住出图 */
+        }
+    }
+
+    /* 主动让服务端开始换模型（立刻返回，切换在后台跑）。
+       为什么必须调它：
+         光轮询 /v1/model-state 是不够的 —— 服务端只在收到出图请求时才会切，
+         而我们在等服务端切好才敢发出图请求，两边就会干等（死锁）。
+         所以先调这个接口把切换启动起来，再去轮询。 */
+    async function requestModelSwitch(modelId) {
+        try {
+            var data = await apiRequest('/v1/prepare-model', {
+                method: 'POST',
+                body: JSON.stringify({ model: modelId }),
+            });
+            return (data && data.result) || {};
+        } catch (error) {
+            console.warn('[' + extensionName + '] 触发模型切换失败：',
+                error && error.message);
+            return {};
+        }
+    }
+
+    /* 如果服务端还不是我们要的模型，就先触发切换、再等它切完。
+       返回 {waited: 是否等过, ok: 最终是否就绪, error}。 */
+    async function waitForModelReady(modelId, onStatus) {
+        var st = await fetchModelSwitchState();
+        if (!st) return { waited: false, ok: true };
+
+        var needSwitch = (st.current !== modelId);
+        if (!st.busy && !needSwitch) return { waited: false, ok: true };
+
+        /* 要等。先把话说清楚。 */
+        var label = modelLabelOf(modelId);
+        var eta = Math.max(60, Number(st.eta_seconds) || 150);
+
+        /* ★ 关键：主动触发切换，别只是干等。
+           不调这一步的话，服务端不会自己开始切 —— 双方会干等到超时。 */
+        if (needSwitch && !st.busy) {
+            if (onStatus) {
+                onStatus('正在切换模型到「' + label + '」，约需 '
+                    + Math.round(eta / 60) + ' 分钟，请稍等…');
+            }
+            showToast('info', '正在切换模型到「' + label + '」，约需 '
+                + Math.round(eta / 60) + ' 分钟，请稍等（不要关页面）', 15000);
+            var triggered = await requestModelSwitch(modelId);
+            if (triggered && triggered.already) {
+                /* 服务端说本来就是这个模型，不用等了 */
+                return { waited: false, ok: true };
+            }
+            /* 等一下让服务端把 busy 置起来，避免第一轮轮询读到旧的 false */
+            await new Promise(function (r) { setTimeout(r, 1200); });
+            var st2 = await fetchModelSwitchState();
+            if (st2 && st2.busy && st2.target && (st2.eta_seconds > 0)) {
+                eta = Math.max(60, Number(st2.eta_seconds) || eta);
+            }
+        } else {
+            if (onStatus) {
+                onStatus('正在切换模型到「' + label + '」，约需 '
+                    + Math.round(eta / 60) + ' 分钟，请稍等…');
+            }
+            showToast('info', '正在切换模型到「' + label + '」，约需 '
+                + Math.round(eta / 60) + ' 分钟，请稍等（不要关页面）', 15000);
+        }
+
+        var started = Date.now();
+        var deadline = started + (eta + 120) * 1000;   /* 留 2 分钟余量 */
+        while (Date.now() < deadline) {
+            await new Promise(function (r) { setTimeout(r, 3000); });
+            var cur = await fetchModelSwitchState();
+            if (!cur) continue;
+            /* 条件：不在切换中，且当前装的确实是我们要的模型 */
+            if (!cur.busy && cur.current === modelId) {
+                if (onStatus) {
+                    onStatus('模型已就绪（' + Math.round((Date.now() - started) / 1000)
+                        + ' 秒），开始出图…');
+                }
+                return { waited: true, ok: true };
+            }
+            if (!cur.busy && cur.error) {
+                return { waited: true, ok: false, error: cur.error };
+            }
+            if (onStatus && cur.busy) {
+                onStatus('正在切换模型到「' + label + '」，已等 '
+                    + Math.round((Date.now() - started) / 1000) + ' 秒'
+                    + (cur.remaining_seconds ? '（预计还要 ' + cur.remaining_seconds + ' 秒）' : '')
+                    + '…');
+            }
+        }
+        return { waited: true, ok: false, error: '等待模型切换超时' };
+    }
+
+    /* 把「连接被强制关闭」这类底层错误翻译成人话 */
+    function friendlyNetworkError(error) {
+        var msg = String((error && error.message) || error || '');
+        if (/10054|强迫关闭|forcibly closed|ECONNRESET|net::ERR_/i.test(msg)) {
+            return '连接被中断（多半是在切换模型）。'
+                + '换模型需要约 2 分钟，请稍后再试一次。';
+        }
+        if (/10060|10061|Failed to fetch|NetworkError|无法连接/i.test(msg)) {
+            return '连不上服务器，请检查网络后重试。';
+        }
+        return msg;
     }
 
     async function generateForMessage(messageId, $button, mode) {
@@ -1820,8 +2107,23 @@ jQuery(async function () {
         request.payload.prompt = prompt;
         setButtonState($button, 'is-loading', request.actionLabel + '中');
         await refreshQueueStatus(true);
-        setStatus('楼层 ' + messageId + '：' + request.actionLabel + '，服务器前方 ' + lastQueueAhead + ' 个任务');
+        setStatus('楼层 ' + messageId + '：' + request.actionLabel + '，服务器前方 '
+            + lastQueueAhead + ' 个任务'
+            + (lastCurrentModel ? '，当前模型 ' + modelLabelOf(lastCurrentModel) : ''));
         try {
+            /* 【关键】出图前先确认服务端模型就绪。
+               需要换模型就等它切完（约 2 分钟），期间用轮询保持连接活跃，
+               避免空闲两分钟后被中间层掐断（WinError 10054）。 */
+            var ready = await waitForModelReady(request.payload.model, function (msg) {
+                setStatus('楼层 ' + messageId + '：' + msg);
+            });
+            if (!ready.ok) {
+                throw new Error('模型切换失败：' + (ready.error || '未知原因')
+                    + '。请稍后重试，或在设置里换回原来的模型。');
+            }
+            /* 计时从「提交请求」开始，到「图注入楼层」结束。
+               包含出图 + 压缩 + 上传三段，是用户实际等的总时长。 */
+            var genStartedAt = Date.now();
             var data = await apiRequest('/v1/generate', { method: 'POST', body: JSON.stringify(request.payload) });
             setStatus('出图完成，正在保存到酒馆...');
             /* 先压缩再上传：PNG 原图常有 1.5~2.5MB，跨洋隧道传输很慢，
@@ -1840,6 +2142,11 @@ jQuery(async function () {
                 savedAt: Date.now()
             };
             await injectImage(messageId, imageUrl, prompt, data.quota, generationMeta);
+            /* 计时收尾：记下这次的耗时，徽标上会显示出来 */
+            lastGenSeconds = Math.max(0, (Date.now() - genStartedAt) / 1000);
+            lastGenSecondsAt = Date.now();
+            lastGenModel = lastCurrentModel || '';
+            updateQueueBadges();
             if (data.quota) { lastKnownQuota = data.quota; }
             $('#cpab-quota').removeClass('is-idle is-error').addClass('is-ok').text(formatQuota(data.quota));
             handleQuotaNotice(data.quota);
@@ -1847,10 +2154,12 @@ jQuery(async function () {
             var charged = Number(data.credits_charged) || genOptions.cost || 1;
             var chargedText = charged > 1 ? '，本次消耗 ' + charged + ' 次' : '';
             setButtonState($button, 'is-success', '出图成功，点击可再次生成');
-            setStatus('楼层 ' + messageId + '：出图完成，seed=' + data.seed + '，steps=' + data.steps + chargedText);
-            showToast('success', '图片已注入楼层，' + formatQuota(data.quota));
+            setStatus('楼层 ' + messageId + '：出图完成，seed=' + data.seed
+                + '，steps=' + data.steps + '，用时 ' + formatGenSeconds(lastGenSeconds) + chargedText);
+            showToast('success', '出图完成，用时 ' + formatGenSeconds(lastGenSeconds)
+                + '，' + formatQuota(data.quota));
             setTimeout(function () {
-                setButtonState($button, '', mode === 'random' ? '随机重绘' : (mode === 'optimize' ? '固定种子，步数 +2 优化（最高 8 步）' : '生成图片'));
+                setButtonState($button, '', mode === 'random' ? '随机重绘' : (mode === 'optimize' ? '固定种子，把画质提一档' : '生成图片'));
             }, 2500);
         } finally {
             refreshQueueStatus(true).catch(function () {});
@@ -1865,9 +2174,11 @@ jQuery(async function () {
         try {
             await generateForMessage(messageId, $button, mode);
         } catch (error) {
+            /* 把底层连接错误翻译成人话再给用户看 */
+            var friendly = friendlyNetworkError(error);
             setButtonState($button, 'is-error', '生图失败，点击重试');
-            setStatus('生图失败：' + (error.message || error));
-            showToast('error', error.message || String(error));
+            setStatus('生图失败：' + friendly);
+            showToast('error', friendly);
             if (Number(error.status) === 402 || /次数已用完|卡密已过期/.test(String(error.message || ''))) {
                 showPurchaseNotice(true);
             } else if (Number(error.status) === 403 && isIpLockedError(error.message)) {
@@ -1891,6 +2202,25 @@ jQuery(async function () {
         renderResolutionNote();
         updateQueueBadges();
         applyDrawingInstruction();
+        /* 提示词版本选择器要在这里同步：settings.html 刚插进 DOM，
+           设置也已经加载完，时机正好。放更早会因为元素还不存在而白跑。 */
+        syncPromptModelUi();
+        /* 启动时静默补挂一次：如果用户用的是「世界书方式」（内置注入关着），
+           而当前版本那本还没挂到全局，就安静地再试一次。
+           成功就悄悄挂上、不弹窗；失败也不弹，等用户下次切模型时再告知。
+           这样做的好处是刷新页面也能自愈，不依赖内存里的标记。 */
+        (async function () {
+            try {
+                if (settings.injectDrawingInstruction !== false) return;
+                var name = worldbookNameOf(currentPromptModel());
+                var ok = await ensureGlobalWorldbook(name, true);
+                if (ok) {
+                    pendingWorldbookName = '';
+                    await realignGlobalWorldbook(name);
+                    await deps().refreshWorldbookStatus();
+                }
+            } catch (error) { /* 忽略 */ }
+        })();
         /* 去服务端把自定义画风取回来，追加进下拉框（没卡密时静默跳过） */
         refreshCustomStyles();
     }
@@ -2209,8 +2539,68 @@ jQuery(async function () {
     /* availableModels / modelsLoaded 的声明已提前到文件顶部，
        原因见那里的注释（normalizeSteps 会在模块加载时就读它）。 */
 
-    var drawingInstructionCache = null;
-    var drawingInstructionLoading = null;
+    /* 内置提示词缓存：按模型分开存，两个文件各读一次。
+       key = 'zturbo' | 'qwen21'，value = 文件内容 */
+    var drawingInstructionCache = {};
+    var drawingInstructionLoading = {};
+    /* 画图模型 id ↔ 提示词版本 id。
+       目前两个模型一一对应；以后加模型时在这里补映射，
+       没映射的模型回落到 zturbo 那套。 */
+    var PROMPT_MODEL_IDS = ['zturbo', 'qwen21'];
+    var PROMPT_MODEL_LABELS = {
+        zturbo: 'Z-Image（简洁）',
+        qwen21: 'Qwen-Image 2.1（详细）'
+    };
+    function normalizePromptModel(value) {
+        var v = String(value || '');
+        return PROMPT_MODEL_IDS.indexOf(v) >= 0 ? v : 'zturbo';
+    }
+    /* 当前该用哪套提示词：优先用户手动选的，否则跟随画图模型 */
+    function currentPromptModel() {
+        return normalizePromptModel(settings.promptModel || settings.model);
+    }
+    function promptModelLabel(id) {
+        return PROMPT_MODEL_LABELS[id] || id;
+    }
+    /* 老版本只有一份 settings.drawingInstruction。
+       升级上来的用户那份自定义内容是给当时的模型（zturbo）写的，
+       所以搬到 zturbo 那一份里，别让用户白改。只搬一次。 */
+    function migrateLegacyInstruction() {
+        try {
+            var legacy = String(settings.drawingInstruction || '').trim();
+            if (!legacy) return;
+            if (!settings.drawingInstructionByModel ||
+                typeof settings.drawingInstructionByModel !== 'object') {
+                settings.drawingInstructionByModel = { zturbo: '', qwen21: '' };
+            }
+            /* 已经有新版内容就不动（避免覆盖用户后来改的） */
+            if (String(settings.drawingInstructionByModel.zturbo || '').trim()) {
+                settings.drawingInstruction = '';
+                return;
+            }
+            settings.drawingInstructionByModel.zturbo = legacy;
+            settings.drawingInstruction = '';
+            console.log('[' + extensionName + '] 已把旧版自定义绘图指令迁移到「Z-Image（简洁）」这一套');
+        } catch (error) { /* 迁移失败不影响使用 */ }
+    }
+
+    /* 取某个模型的自定义指令（空 = 用内置） */
+    function customInstructionOf(model) {
+        var m = normalizePromptModel(model);
+        var byModel = settings.drawingInstructionByModel;
+        if (byModel && typeof byModel === 'object') {
+            return String(byModel[m] || '').trim();
+        }
+        return '';
+    }
+    function setCustomInstructionOf(model, text) {
+        var m = normalizePromptModel(model);
+        if (!settings.drawingInstructionByModel ||
+            typeof settings.drawingInstructionByModel !== 'object') {
+            settings.drawingInstructionByModel = { zturbo: '', qwen21: '' };
+        }
+        settings.drawingInstructionByModel[m] = String(text || '');
+    }
     var DRAWING_INSTRUCTION_KEY = 'cpab_drawing_instruction';
 
     /* 以下三个仅供离线测试注入，正常运行始终为 null / 空对象 */
@@ -2278,28 +2668,51 @@ jQuery(async function () {
         };
     }
 
-    function fetchDrawingInstruction() {
-        if (drawingInstructionCache !== null) return Promise.resolve(drawingInstructionCache);
-        if (drawingInstructionLoading) return drawingInstructionLoading;
-        drawingInstructionLoading = fetch(extensionFolderPath + '/drawing-instruction.txt', { cache: 'no-store' })
+    /* 内置提示词文件名，每个模型一个 */
+    function instructionFileName(model) {
+        return 'drawing-instruction-' + normalizePromptModel(model) + '.txt';
+    }
+
+    /* 读取指定模型的内置提示词。读不到时回落到 zturbo 那份，
+       两份都读不到就返回空串（调用方会让用户手动填）。 */
+    function fetchDrawingInstruction(model) {
+        var m = normalizePromptModel(model || currentPromptModel());
+        if (typeof drawingInstructionCache[m] === 'string') {
+            return Promise.resolve(drawingInstructionCache[m]);
+        }
+        if (drawingInstructionLoading[m]) return drawingInstructionLoading[m];
+        drawingInstructionLoading[m] = fetch(
+                extensionFolderPath + '/' + instructionFileName(m), { cache: 'no-store' })
             .then(function (res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.text();
             })
             .then(function (text) {
-                drawingInstructionCache = String(text || '').trim();
-                return drawingInstructionCache;
+                drawingInstructionCache[m] = String(text || '').trim();
+                return drawingInstructionCache[m];
             })
             .catch(function (error) {
-                console.warn('[' + extensionName + '] 绘图指令读取失败：', error && error.message);
-                drawingInstructionCache = '';
+                console.warn('[' + extensionName + '] 提示词读取失败（' + m + '）：',
+                    error && error.message);
+                drawingInstructionCache[m] = '';
+                /* 这个模型的读不到，回落到 zturbo 那份 */
+                if (m !== 'zturbo') {
+                    return fetchDrawingInstruction('zturbo');
+                }
                 return '';
             })
             .then(function (value) {
-                drawingInstructionLoading = null;
+                drawingInstructionLoading[m] = null;
                 return value;
             });
-        return drawingInstructionLoading;
+        return drawingInstructionLoading[m];
+    }
+
+    /* 把两个模型的内置提示词都预读进来（设置面板要显示模型名） */
+    function fetchAllDrawingInstructions() {
+        return Promise.all(PROMPT_MODEL_IDS.map(function (m) {
+            return fetchDrawingInstruction(m).catch(function () { return ''; });
+        }));
     }
 
     /* 指令注入的位置：必须与「画图世界书」的原设置完全一致。
@@ -2336,11 +2749,18 @@ jQuery(async function () {
         return text;
     }
 
-    /* 读取指令：优先用用户自己改过的版本，没有就用内置文件 */
-    function effectiveInstructionText() {
-        var custom = String(settings.drawingInstruction || '').trim();
+    /* 读取指令：优先用用户为该模型改过的版本，没有就用该模型的内置文件。
+       传入 model 时读指定模型，不传时读当前生效的那套。 */
+    function effectiveInstructionText(model) {
+        var m = model ? normalizePromptModel(model) : currentPromptModel();
+        var custom = customInstructionOf(m);
         if (custom) return custom;
-        return resolveInstructionText(drawingInstructionCache || '');
+        var builtin = drawingInstructionCache[m];
+        if (typeof builtin !== 'string' || !builtin) {
+            /* 该模型还没读到（或读失败）：回落到 zturbo 那份，保证有内容可用 */
+            builtin = drawingInstructionCache.zturbo || '';
+        }
+        return resolveInstructionText(builtin);
     }
 
     function clearDrawingInstruction() {
@@ -2359,7 +2779,7 @@ jQuery(async function () {
             return;
         }
         /* 先确保内置指令已读到（用户改过的版本在设置里，不需要网络） */
-        await fetchDrawingInstruction();
+        await fetchAllDrawingInstructions();
         var instruction = effectiveInstructionText();
         if (!instruction) { clearDrawingInstruction(); refreshInstructionStatus(); return; }
         try {
@@ -2370,6 +2790,22 @@ jQuery(async function () {
         refreshInstructionStatus();
     }
 
+    /* 把「提示词版本」选择器和说明文字刷成当前状态 */
+    function syncPromptModelUi() {
+        var pm = currentPromptModel();
+        var $sel = $('#cpab-prompt-model');
+        if ($sel.length) $sel.val(pm);
+        var $note = $('#cpab-prompt-model-note');
+        if ($note.length) {
+            var extra = (pm === 'qwen21')
+                ? '详细版：会要求 AI 写明外貌、服装、站位、光源，并禁止画风/画质词。'
+                  + '适合 Qwen-Image 2.1 这种对提示词敏感、能画出复杂画面的模型。'
+                : '简洁版：只描述人物、动作和环境，画风画质交给模型自己发挥。'
+                  + '适合 Z-Image 这种出图快、提示词太长反而拖慢的模型。';
+            $note.text('当前用「' + promptModelLabel(pm) + '」。' + extra);
+        }
+    }
+
     function refreshInstructionStatus() {
         var $el = $('#cpab-instruction-status');
         if (!$el.length) return;
@@ -2378,9 +2814,14 @@ jQuery(async function () {
             $el.text('当前酒馆版本没有 setExtensionPrompt，无法自动注入绘图指令。').removeClass('is-ok').addClass('is-warn');
             return;
         }
-        var usingCustom = !!String(settings.drawingInstruction || '').trim();
-        $el.text('运行中：插件会自动告诉 AI 在正文后输出绘图提示词，无需导入世界书。' +
-            (usingCustom ? '（当前使用你修改过的指令）' : '（当前使用内置推荐指令）'))
+        var pm = currentPromptModel();
+        var usingCustom = !!customInstructionOf(pm);
+        $el.text('运行中：插件会自动告诉 AI 在正文后输出绘图提示词，无需导入世界书。'
+            + '（当前用「' + promptModelLabel(pm) + '」这套，'
+            + (usingCustom ? '你修改过的版本' : '内置推荐版') + '）'
+            /* 版本号显示在这里：改完代码后如果这里还是旧号，
+               说明浏览器加载的是缓存，需要硬刷新（Ctrl+Shift+R）。 */
+            + ' [v' + EXTENSION_VERSION + ']')
             .removeClass('is-warn').addClass('is-ok');
     }
 
@@ -2397,10 +2838,12 @@ jQuery(async function () {
         var $info = $('#cpab-instruction-info');
         if (!$info.length) return;
         var n = instructionWordCount();
+        var pm = currentPromptModel();
         var dirty = String($('#cpab-instruction-text').val() || '').trim() !==
-            String(settings.drawingInstruction || '').trim();
-        var usingCustom = !!String(settings.drawingInstruction || '').trim();
-        $info.text('当前 ' + n.total + ' 字（中文 ' + n.chinese + ' 字）· ' +
+            String(customInstructionOf(pm)).trim();
+        var usingCustom = !!customInstructionOf(pm);
+        $info.text('「' + promptModelLabel(pm) + '」· ' + n.total + ' 字（中文 '
+            + n.chinese + ' 字）· ' +
             (usingCustom ? '已自定义' : '内置推荐版') +
             (dirty ? ' · 有未保存的修改' : ''));
         $info.removeClass('is-warn');
@@ -2419,12 +2862,13 @@ jQuery(async function () {
     async function loadInstructionIntoEditor() {
         var $ta = $('#cpab-instruction-text');
         if (!$ta.length) return;
-        var custom = String(settings.drawingInstruction || '').trim();
+        var pm = currentPromptModel();
+        var custom = customInstructionOf(pm);
         if (custom) {
             $ta.val(custom);
         } else {
-            await fetchDrawingInstruction();
-            $ta.val(drawingInstructionCache || '');
+            var builtin = await fetchDrawingInstruction(pm);
+            $ta.val(builtin || '');
         }
         refreshInstructionEditorInfo();
         setInstructionEditorMessage('');
@@ -2438,18 +2882,86 @@ jQuery(async function () {
        注意：世界书和内置注入**同时生效会导致指令重复**，
        所以点「安装为世界书」时会自动关掉内置注入，两者互斥。 */
 
-    var WORLDBOOK_NAME = '默默画图世界书';
+    /* 世界书按提示词版本各一本，名字不同，互不覆盖。
+       只启用「当前版本」那一本；另一本会被移出全局启用列表，
+       否则同一段指令会出现两次、白占 token。 */
+    var WORLDBOOK_NAME_PREFIX = '默默画图世界书-';
+    var LEGACY_WORLDBOOK_NAME = '默默画图世界书';
+    function worldbookNameOf(model) {
+        return WORLDBOOK_NAME_PREFIX + normalizePromptModel(model);
+    }
+    /* 当前操作中的世界书名。以前是个常量，现在跟着 promptModel 走；
+       保留 WORLDBOOK_NAME 这个名字，下面的代码不用大改。 */
+    var WORLDBOOK_NAME = worldbookNameOf(currentPromptModel());
+    /* 所有本插件可能用过的世界书名（含旧版单本） */
+    function allMomoWorldbookNames() {
+        var names = PROMPT_MODEL_IDS.map(worldbookNameOf);
+        names.push(LEGACY_WORLDBOOK_NAME);
+        return names;
+    }
+    /* 切版本时同步名字，并让两本互斥 */
+    async function syncWorldbookForPromptModel() {
+        WORLDBOOK_NAME = worldbookNameOf(currentPromptModel());
+        await disableOtherMomoWorldbooks();
+        await deps().refreshWorldbookStatus();
+    }
+    /* 把「不是当前版本」的本插件世界书全部移出全局启用列表 */
+    async function disableOtherMomoWorldbooks() {
+        var keep = WORLDBOOK_NAME;
+        var others = allMomoWorldbookNames().filter(function (n) { return n !== keep; });
+        if (!others.length) return;
+        var helper = getTavernHelper();
+        if (helper) {
+            try {
+                var cur = await helper.getLorebookSettings();
+                var list = ((cur && cur.selected_global_lorebooks) || [])
+                    .map(function (x) { return String(x || ''); });
+                var filtered = list.filter(function (x) { return others.indexOf(x) < 0; });
+                if (filtered.length !== list.length) {
+                    await helper.setLorebookSettings({ selected_global_lorebooks: filtered });
+                }
+            } catch (error) { /* helper 不可用，继续走下面 */ }
+        }
+        try {
+            var root = getSettingsRoot();
+            if (root && root.world_info && Array.isArray(root.world_info.globalSelect)) {
+                var arr = root.world_info.globalSelect;
+                for (var i = arr.length - 1; i >= 0; i--) {
+                    if (others.indexOf(String(arr[i])) >= 0) arr.splice(i, 1);
+                }
+            }
+        } catch (error) { /* 忽略 */ }
+    }
 
     /* 优先使用 TavernHelper API（由 JS-Slash-Runner 扩展提供）。
        这是酒馆生态里挂载世界书最可靠的官方路子：
          setLorebookSettings({ selected_global_lorebooks: [...] }) 直接写全局启用，
        比自己去改 settings.world_info.globalSelect 稳妥得多。
        本机另一个扩展 my-world-book-momo 也是走这套 API 的。 */
+    /* TavernHelper 的 API 在不同版本里暴露的函数不一样。
+       以前只认 setLorebookSettings，缺这个函数就整个放弃 TavernHelper、
+       退回只写运行时模块 —— 而运行时模块管不到 TavernHelper 的内部状态，
+       结果 globalSelect 的替换失败，旧世界书一直挂在全局。
+       现在只要暴露了任一世界书相关函数就认它（对齐 my-world-book-momo 的做法，
+       那个扩展检测的是 getLorebooks）。 */
+    var TAVERN_HELPER_FUNCS = ['setLorebookSettings', 'getLorebookSettings',
+                               'getLorebooks', 'replaceLorebookEntries',
+                               'createLorebook', 'deleteLorebook'];
+    function tavernHelperHas(helper) {
+        if (!helper) return false;
+        for (var i = 0; i < TAVERN_HELPER_FUNCS.length; i++) {
+            if (typeof helper[TAVERN_HELPER_FUNCS[i]] === 'function') return true;
+        }
+        return false;
+    }
     function getTavernHelper() {
         if (typeof window === 'undefined') return null;
         var helper = window.TavernHelper;
-        if (helper && typeof helper.setLorebookSettings === 'function') return helper;
-        return null;
+        return tavernHelperHas(helper) ? helper : null;
+    }
+    /* 世界书开关必须走这个函数：TavernHelper 只暴露了它才能改全局启用 */
+    function tavernHelperCanSetGlobal(helper) {
+        return !!(helper && typeof helper.setLorebookSettings === 'function');
     }
 
     function delay(ms) {
@@ -2500,6 +3012,318 @@ jQuery(async function () {
     }
 
     /* 把「默默画图世界书」加入 / 移出全局启用列表 */
+    /* ------------------------------------------------------------------
+       全局启用列表的读写：从「所有可用来源」读、往「所有可用来源」写。
+
+       为什么两个来源都要动：
+         TavernHelper 和 world-info 运行时模块各自持有一份状态，
+         只写一个的话，另一份可能就是旧的，界面上看起来没生效。
+       ------------------------------------------------------------------ */
+
+    /* 读当前全局启用列表。返回 {list, sources}；list 为 null 表示一个来源都读不到。 */
+    async function readGlobalSelectAny() {
+        var sources = [];
+        var merged = null;
+
+        var helperList = await readGlobalSelectFromHelper();
+        if (Array.isArray(helperList)) {
+            /* TavernHelper 能读就用它，且【不和运行时取并集】。
+               取并集会让「实际不在列表里的名字」被当成在里面，
+               于是替换时删不掉它 —— 这正是旧世界书一直挂着的原因之一。 */
+            return { list: helperList.slice(), sources: ['helper'] };
+        }
+        var runtimeList = await readGlobalSelectFromRuntime();
+        if (Array.isArray(runtimeList)) {
+            sources.push('runtime');
+            if (merged === null) merged = runtimeList.slice();
+            else {
+                /* 取并集，避免因两份不同步而漏掉用户已有的世界书 */
+                runtimeList.forEach(function (x) {
+                    if (merged.indexOf(x) < 0) merged.push(x);
+                });
+            }
+        }
+        var saved = getSavedGlobalSelect();
+        if (Array.isArray(saved)) {
+            sources.push('settings');
+            if (merged === null) merged = saved.map(String);
+            else {
+                saved.forEach(function (x) {
+                    var s = String(x || '');
+                    if (s && merged.indexOf(s) < 0) merged.push(s);
+                });
+            }
+        }
+        return { list: merged, sources: sources };
+    }
+
+    /* 让酒馆把世界书文件列表刷新一遍。
+       为什么必须做：TavernHelper 的 setLorebookSettings 会在
+       「要挂的名字不在它已知的世界书列表里」时直接抛错拒绝。
+       我们刚用 /api/worldinfo/edit 写完文件，那份列表可能还没更新，
+       于是挂载被拒 —— 表现为「点了安装、提示成功，实际没挂上」。
+       这里拉一次 /api/settings/get（TavernHelper 内部也是这么刷的），
+       再把这个列表同步给运行时模块。失败不阻塞，只是少一层保险。 */
+    var worldNamesSyncedAt = 0;
+    async function syncTavernWorldNames(force) {
+        var now = Date.now();
+        if (!force && now - worldNamesSyncedAt < 1500) return true;
+        try {
+            var context = getStContext();
+            var headers = context && typeof context.getRequestHeaders === 'function'
+                ? context.getRequestHeaders()
+                : { 'Content-Type': 'application/json' };
+            var res = await fetch('/api/settings/get', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({}),
+            });
+            if (!res.ok) return false;
+            var data = await res.json();
+            var names = (data && data.world_names) || [];
+            if (!names.length) return false;
+            worldNamesSyncedAt = Date.now();
+            /* 同步给运行时模块（TavernHelper 自己会在下一次调用时重读，
+               我们这边把能改的都改一遍） */
+            try {
+                var mod = await deps().loadWorldInfoModule();
+                if (mod && Array.isArray(mod.world_names)) {
+                    mod.world_names.length = 0;
+                    names.forEach(function (n) { mod.world_names.push(n); });
+                }
+            } catch (error) { /* 忽略 */ }
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /* 通过酒馆的事件总线改全局启用列表。
+       worldinfo_updated 是官方事件，发出去后酒馆会自己读 world_info.globalSelect。
+       关键：必须【就地修改】数组（length=0 再 push），
+       替换整个属性酒馆那边不会同步。 */
+    async function writeGlobalSelectViaEvents(list) {
+        try {
+            var context = getStContext();
+            var es = context && context.eventSource;
+            var mod = await deps().loadWorldInfoModule();
+            var wi = mod && mod.world_info;
+            if (!wi || !Array.isArray(wi.globalSelect)) return false;
+            var wanted = list.map(function (x) { return String(x || ''); }).filter(Boolean);
+            wi.globalSelect.length = 0;
+            wanted.forEach(function (x) { wi.globalSelect.push(x); });
+            if (es && typeof es.emit === 'function') {
+                var types = (context && context.event_types) || {};
+                es.emit(types.WORLDINFO_UPDATED || 'worldinfo_updated',
+                        { name: '(global)', data: { globalSelect: wanted } });
+            }
+            return true;
+        } catch (error) {
+            console.warn('[' + extensionName + '] 事件总线写世界书失败：', error && error.message);
+            return false;
+        }
+    }
+
+    /* 往所有可用来源写全局启用列表 */
+    async function writeGlobalSelectAny(list) {
+        var wanted = list.map(function (x) { return String(x || ''); }).filter(Boolean);
+        var wrote = [];
+
+        var helper = await waitForTavernHelper(6, 250);
+        if (tavernHelperCanSetGlobal(helper)) {
+            /* 先让酒馆刷新世界书列表，否则 TavernHelper 会因为
+               「找不到这个名字」而拒绝写入 */
+            await syncTavernWorldNames(true);
+            try {
+                await helper.setLorebookSettings({ selected_global_lorebooks: wanted });
+                wrote.push('helper');
+            } catch (error) {
+                /* 最常见的原因就是刚写的世界书还没进酒馆列表。
+                   刷新一次再试一遍，成了就继续。 */
+                console.warn('[' + extensionName + '] TavernHelper 写入失败，'
+                    + '刷新世界书列表后重试：', error && error.message);
+                try {
+                    await syncTavernWorldNames(true);
+                    await delay(400);
+                    await helper.setLorebookSettings({ selected_global_lorebooks: wanted });
+                    wrote.push('helper-retry');
+                } catch (error2) {
+                    console.warn('[' + extensionName + '] TavernHelper 重试仍失败：',
+                        error2 && error2.message);
+                }
+            }
+        } else if (helper) {
+            console.log('[' + extensionName + '] TavernHelper 没有 setLorebookSettings，'
+                + '改用事件总线写世界书');
+        }
+        /* 事件总线兜底：TavernHelper 缺少 setLorebookSettings 时，
+           这是唯一能真正改到 globalSelect 的路子。 */
+        if (wrote.indexOf('helper') < 0) {
+            if (await writeGlobalSelectViaEvents(wanted)) wrote.push('events');
+        }
+
+        try {
+            var mod = await deps().loadWorldInfoModule();
+            var wi = mod && mod.world_info;
+            if (wi && Array.isArray(wi.globalSelect)) {
+                /* 原地改：替换整个属性不会同步到各处 */
+                wi.globalSelect.length = 0;
+                wanted.forEach(function (x) { wi.globalSelect.push(x); });
+                wrote.push('runtime');
+                try {
+                    if (Array.isArray(mod.selected_world_info)) {
+                        mod.selected_world_info.length = 0;
+                        wanted.forEach(function (x) { mod.selected_world_info.push(x); });
+                    }
+                } catch (error) { /* 只读绑定，忽略 */ }
+            }
+        } catch (error) { /* 拿不到运行时模块，继续 */ }
+
+        try {
+            var root = getSettingsRoot();
+            if (root) {
+                root.world_info = root.world_info || {};
+                if (!Array.isArray(root.world_info.globalSelect)) root.world_info.globalSelect = [];
+                root.world_info.globalSelect.length = 0;
+                wanted.forEach(function (x) { root.world_info.globalSelect.push(x); });
+                wrote.push('settings');
+            }
+        } catch (error) { /* 忽略 */ }
+
+        var context = getStContext();
+        try {
+            if (context && typeof context.saveSettingsDebounced === 'function') context.saveSettingsDebounced();
+            else if (typeof window !== 'undefined' && typeof window.saveSettingsDebounced === 'function') window.saveSettingsDebounced();
+        } catch (error) { /* 忽略 */ }
+
+        return wrote;
+    }
+
+    /* 最后收口：全局启用列表里只允许有「当前 promptModel 对应的那一本」，
+       本插件其它版本（含旧版单本）一律移除。只读回验，返回是否达标。 */
+    async function realignGlobalWorldbook(keepName) {
+        var keep = String(keepName || '');
+        var others = allMomoWorldbookNames().filter(function (n) { return n !== keep; });
+        var cur = await readGlobalSelectAny();
+        if (cur.list === null) return false;
+        var offending = cur.list.filter(function (n) { return others.indexOf(n) >= 0; });
+        if (!offending.length) return true;
+        console.log('[' + extensionName + '] 收口：移除其它版本世界书', offending);
+        var list = cur.list.filter(function (x) { return others.indexOf(x) < 0; });
+        await writeGlobalSelectAny(list);
+        await delay(250);
+        var after = await readGlobalSelectAny();
+        if (after.list === null) return true;
+        return !after.list.some(function (n) { return others.indexOf(n) >= 0; });
+    }
+
+    /* 确保 name 在全局启用列表里 / 不在里面。返回是否真的生效（回读验证过）。
+       这是「挂全局」的唯一入口，带重试，因为世界书文件刚写完时
+       酒馆可能还没把它读进内存，第一次挂会失败。 */
+    async function ensureGlobalWorldbook(name, shouldEnable) {
+        var target = String(name || '');
+        if (!target) return false;
+        for (var attempt = 0; attempt < 3; attempt++) {
+            var cur = await readGlobalSelectAny();
+            if (cur.list === null) {
+                /* 一个来源都读不到，只能直接写 */
+                await writeGlobalSelectAny(shouldEnable
+                    ? allMomoWorldbookNames().filter(function (n) { return n === target; })
+                    : []);
+            } else {
+                var list = cur.list.slice();
+                var has = list.indexOf(target) >= 0;
+                /* 本插件其它版本那本始终要移出去，避免指令重复 */
+                var others = allMomoWorldbookNames().filter(function (n) { return n !== target; });
+                list = list.filter(function (x) { return others.indexOf(x) < 0; });
+                if (shouldEnable) {
+                    if (list.indexOf(target) < 0) list.push(target);
+                } else {
+                    list = list.filter(function (x) { return x !== target; });
+                }
+                var changed = (has !== shouldEnable) || (list.length !== cur.list.length);
+                if (changed) await writeGlobalSelectAny(list);
+            }
+            /* 回读验证 */
+            await delay(250);
+            var after = await readGlobalSelectAny();
+            if (after.list === null) return true;   /* 读不到，只能相信写入 */
+            var now = after.list.indexOf(target) >= 0;
+            if (now === shouldEnable) return true;
+        }
+        /* 三轮都没成：如果是要启用，顺手把别的版本收口掉（至少不留两本） */
+        if (shouldEnable) {
+            await realignGlobalWorldbook(target);
+        }
+        return false;
+    }
+
+    /* 刚安装、但还没成功挂到全局的那本世界书。
+       模型切换时如果发现有它，会自动再尝试挂一次。 */
+    var pendingWorldbookName = '';
+
+    /* 切模型/切提示词版本时调用：
+       把当前版本那本世界书挂到全局（另一本自动移出），
+       并按真实结果给用户弹窗——成功说成功，失败说手动办法。
+       只在「用户已经在用世界书方式」时才动，否则不该打扰他：
+       判断依据是内置注入已关闭（说明他选了世界书方式）。 */
+    async function autoMountForCurrentModel() {
+        WORLDBOOK_NAME = worldbookNameOf(currentPromptModel());
+        /* 判断用户是不是在用「世界书方式」。两个依据，满足任一即可：
+             ① 内置注入被明确关掉了
+             ② 全局启用列表里当前挂着本插件的世界书
+           只看 ① 是不够的：injectDrawingInstruction 默认是 true，
+           如果状态里它是 true（但用户其实已经挂过世界书），
+           切模型就会走「只清不挂」的分支 —— 表现就是「换不了」。 */
+        var usingWorldbook = (settings.injectDrawingInstruction === false);
+        if (!usingWorldbook) {
+            var curNames = allMomoWorldbookNames();
+            var cur = await readGlobalSelectAny();
+            if (cur.list && cur.list.some(function (n) { return curNames.indexOf(n) >= 0; })) {
+                usingWorldbook = true;
+                console.log('[' + extensionName + '] 检测到已挂载本插件世界书，'
+                    + '按世界书方式处理（顺便把内置注入关掉，避免指令重复）');
+                settings.injectDrawingInstruction = false;
+                deps().saveSettings();
+                deps().clearDrawingInstruction();
+                deps().refreshInstructionStatus();
+            }
+        }
+        if (!usingWorldbook) {
+            /* 确实在用内置注入方式：只把别的版本那本清掉，不去新增 */
+            await disableOtherMomoWorldbooks();
+            await deps().refreshWorldbookStatus();
+            return;
+        }
+        /* ① 先写世界书文件。少了这一步，TavernHelper 会因为
+           「找不到这个名字」拒绝挂载，结果一本都挂不上。 */
+        var written = await writeWorldbookFile(currentPromptModel());
+        if (!written.ok) {
+            pendingWorldbookName = WORLDBOOK_NAME;
+            await deps().refreshWorldbookStatus();
+            console.warn('[' + extensionName + '] 写世界书文件失败：', written.reason);
+            deps().showToast('error',
+                '写入世界书失败（' + written.reason
+                + '），请在设置里点「下载配套世界书文件」手动挂到全局');
+            return;
+        }
+        /* ② 再挂到全局，并回读确认 */
+        var ok = await ensureGlobalWorldbook(written.name, true);
+        if (ok) {
+            pendingWorldbookName = '';
+            /* ③ 收口：把本插件其它版本（含旧版单本）移出全局，只留当前这本 */
+            await realignGlobalWorldbook(written.name);
+            await deps().refreshWorldbookStatus();
+            deps().showToast('success', '已挂载全局成功：' + written.name);
+        } else {
+            pendingWorldbookName = written.name;
+            await deps().refreshWorldbookStatus();
+            deps().showToast('error',
+                '挂载全局失败，请在设置里点「下载配套世界书文件」，手动挂到全局');
+        }
+    }
+
+
     async function setWorldbookGloballyEnabled(enabled) {
         var helper = await waitForTavernHelper(8, 300);
         if (!helper) return setWorldbookGloballyEnabledViaRuntime(enabled);
@@ -2591,53 +3415,32 @@ jQuery(async function () {
             deps().setInstructionEditorMessage('当前环境拿不到酒馆接口，无法自动安装世界书。请手动导入。', true);
             return;
         }
-        var instruction = deps().effectiveInstructionText();
+        /* 按当前提示词版本写对应的那一本 */
+        var promptModel = currentPromptModel();
+        WORLDBOOK_NAME = worldbookNameOf(promptModel);
+        var instruction = deps().effectiveInstructionText(promptModel);
         if (!instruction) {
             deps().setInstructionEditorMessage('指令内容为空，无法生成世界书。', true);
             return;
         }
+        /* 先把别的版本那本关掉，避免同一条指令在上下文里出现两次 */
+        await disableOtherMomoWorldbooks();
 
         var $btn = $('#cpab-install-worldbook');
         if ($btn.length) { $btn.prop('disabled', true); }
         deps().setInstructionEditorMessage('正在写入世界书…');
 
-        var notes = [];
         try {
-            /* ---- 1) 写入世界书文件（这一步只能用官方接口） ---- */
-            var response = await fetch('/api/worldinfo/edit', {
-                method: 'POST',
-                headers: context.getRequestHeaders(),
-                body: JSON.stringify({ name: WORLDBOOK_NAME, data: buildWorldbookData(instruction) }),
-            });
-            if (!response.ok) {
-                throw new Error('写入世界书文件失败 HTTP ' + response.status);
+            /* ---- 1) 写入世界书文件（复用公共函数，和自动挂载走同一套） ---- */
+            var wrote = await writeWorldbookFile(promptModel);
+            if (!wrote.ok) {
+                throw new Error('写入世界书文件失败：' + wrote.reason);
             }
 
-            /* ---- 2) 全局启用：优先 TavernHelper，其次直接改设置 ---- */
-            var activated = false;
-            var helperResult = await setWorldbookGloballyEnabled(true);
-            if (helperResult.ok) {
-                activated = true;
-                notes.push('已通过 TavernHelper 全局启用');
-            } else {
-                /* 回落：直接写 settings.world_info.globalSelect */
-                var root = deps().getSettingsRoot();
-                if (root) {
-                    root.world_info = root.world_info || {};
-                    if (!Array.isArray(root.world_info.globalSelect)) root.world_info.globalSelect = [];
-                    if (root.world_info.globalSelect.indexOf(WORLDBOOK_NAME) < 0) {
-                        root.world_info.globalSelect.push(WORLDBOOK_NAME);
-                    }
-                    activated = true;
-                    if (typeof context.saveSettingsDebounced === 'function') context.saveSettingsDebounced();
-                    else if (typeof window !== 'undefined' && typeof window.saveSettingsDebounced === 'function') window.saveSettingsDebounced();
-                    notes.push(helperResult.reason === 'no-helper'
-                        ? '未检测到 TavernHelper，已改为直接写入酒馆设置'
-                        : 'TavernHelper 调用失败，已改为直接写入酒馆设置');
-                } else {
-                    notes.push('未能自动启用，请到世界书面板手动勾选「' + WORLDBOOK_NAME + '」');
-                }
-            }
+            /* ---- 2) 全局启用，并【回读验证】----
+               以前这里只看 helper 的返回值就报成功，实测会出现
+               「提示已启用、实际没挂上」的情况。所以现在一律回读确认。 */
+            var activated = await ensureGlobalWorldbook(WORLDBOOK_NAME, true);
 
             /* ---- 3) 关掉内置注入，避免同一段指令出现两次 ---- */
             settings.injectDrawingInstruction = false;
@@ -2646,16 +3449,67 @@ jQuery(async function () {
             deps().refreshInstructionStatus();
             await deps().refreshWorldbookStatus();
 
-            deps().setInstructionEditorMessage(
-                '已安装世界书「' + WORLDBOOK_NAME + '」。' + notes.join('；') +
-                '。同时关闭了内置注入（避免指令重复）。' +
-                (activated ? ' 若世界书面板里看不到它，刷新页面即可。' : ''),
-                !activated);
-            deps().showToast('success', activated ? '世界书已安装并启用' : '世界书已写入，但需手动启用');
+            if (activated) {
+                /* 挂上了：清掉待挂标记，并做一次收口，
+                   确保全局里只剩当前版本那一本（旧版单本 / 另一个版本都移掉） */
+                pendingWorldbookName = '';
+                await realignGlobalWorldbook(WORLDBOOK_NAME);
+                deps().setInstructionEditorMessage(
+                    '世界书「' + WORLDBOOK_NAME + '」已安装并挂载为全局世界书。'
+                    + '同时关闭了内置注入（避免指令重复）。'
+                    + '若世界书面板里看不到它，刷新页面即可。', false);
+                deps().showToast('success', '已挂载全局成功：' + WORLDBOOK_NAME);
+            } else {
+                /* 没挂上：记下来，模型切换时会自动再试；同时告诉用户手动办法 */
+                pendingWorldbookName = WORLDBOOK_NAME;
+                deps().setInstructionEditorMessage(
+                    '世界书「' + WORLDBOOK_NAME + '」已写入，但【自动挂载全局失败】。'
+                    + '请点下面的「下载配套世界书文件」，然后到酒馆的'
+                    + '「已启用的世界（全局有效）」里手动挂上它。'
+                    + '（切换画图模型时插件还会自动再试一次）', true);
+                deps().showToast('error',
+                    '挂载全局失败，请在设置里下载世界书手动挂载到全局');
+            }
         } catch (error) {
             deps().setInstructionEditorMessage('安装世界书失败：' + (error && error.message ? error.message : error), true);
         } finally {
             if ($btn.length) { $btn.prop('disabled', false); }
+        }
+    }
+
+    /* 把当前版本的世界书写进酒馆的世界书目录。
+       返回 {ok, reason}。
+       为什么要有这个公共函数：手动点「安装为世界书」和
+       「切模型时自动挂载」都必须先写文件 —— TavernHelper 会因为
+       「找不到这个名字」而拒绝挂载一个不存在的世界书。 */
+    async function writeWorldbookFile(model) {
+        var context = getStContext();
+        if (!context || typeof context.getRequestHeaders !== 'function') {
+            return { ok: false, reason: 'no-st-context' };
+        }
+        var pm = normalizePromptModel(model || currentPromptModel());
+        var name = worldbookNameOf(pm);
+        var instruction = deps().effectiveInstructionText(pm);
+        if (!instruction) {
+            return { ok: false, reason: 'empty-instruction' };
+        }
+        try {
+            var response = await fetch('/api/worldinfo/edit', {
+                method: 'POST',
+                headers: context.getRequestHeaders(),
+                body: JSON.stringify({
+                    name: name,
+                    data: buildWorldbookData(instruction),
+                }),
+            });
+            if (!response.ok) {
+                return { ok: false, reason: 'http-' + response.status };
+            }
+            /* 写完让酒馆把世界书列表刷一遍，否则紧接着的挂载会被拒绝 */
+            await syncTavernWorldNames(true);
+            return { ok: true, name: name };
+        } catch (error) {
+            return { ok: false, reason: (error && error.message) || String(error) };
         }
     }
 
@@ -2664,7 +3518,10 @@ jQuery(async function () {
        这时只能靠用户手动导入世界书。文件名用中文，方便用户在文件管理器里认出来。 */
     function downloadWorldbook() {
         try {
-            var content = effectiveInstructionText();
+            /* 按当前提示词版本下载对应的那一本 */
+            var model = currentPromptModel();
+            WORLDBOOK_NAME = worldbookNameOf(model);
+            var content = effectiveInstructionText(model);
             if (!content) {
                 deps().setInstructionEditorMessage('指令内容为空，无法生成世界书文件。', true);
                 return;
@@ -2700,29 +3557,29 @@ jQuery(async function () {
 
     /* 卸载：从全局启用列表里去掉（不删文件，方便用户自己决定） */
     async function uninstallWorldbook() {
-        var removed = false;
-        var helperResult = await setWorldbookGloballyEnabled(false);
-        if (helperResult.ok) removed = true;
-
-        /* 不管走哪条路，都把设置里也清一遍，避免残留导致重复 */
-        var root = deps().getSettingsRoot();
-        if (root && root.world_info && Array.isArray(root.world_info.globalSelect)) {
-            var idx = root.world_info.globalSelect.indexOf(WORLDBOOK_NAME);
-            if (idx >= 0) { root.world_info.globalSelect.splice(idx, 1); removed = true; }
+        /* 两个版本的本插件世界书（含旧版单本）全部移出全局启用列表。
+           用带回读验证的 ensureGlobalWorldbook，成功与否都按实际状态算。 */
+        var names = allMomoWorldbookNames();
+        var anyRemoved = false;
+        for (var vi = 0; vi < names.length; vi++) {
+            try {
+                var stillThere = await ensureGlobalWorldbook(names[vi], false);
+                /* 返回 true = 操作后确实不在列表里了，说明确实移除过 */
+                if (stillThere) anyRemoved = true;
+            } catch (error) { /* 某一个失败不影响其它 */ }
         }
-        var context = getStContext();
-        if (typeof context?.saveSettingsDebounced === 'function') context.saveSettingsDebounced();
-        else if (typeof window !== 'undefined' && typeof window.saveSettingsDebounced === 'function') window.saveSettingsDebounced();
+        WORLDBOOK_NAME = worldbookNameOf(currentPromptModel());
+        pendingWorldbookName = '';
 
-        /* 恢复内置注入 */
+        /* 恢复内置注入（世界书方式关掉，自动注入开回来） */
         settings.injectDrawingInstruction = true;
         deps().saveSettings();
         applyDrawingInstruction();
         await deps().refreshWorldbookStatus();
 
-        deps().setInstructionEditorMessage(removed
-            ? '已取消全局启用「' + WORLDBOOK_NAME + '」，并恢复内置注入。世界书文件仍保留，可在世界书面板删除。'
-            : '没有找到已启用的「' + WORLDBOOK_NAME + '」，已恢复内置注入。', false);
+        deps().setInstructionEditorMessage(
+            '已取消本插件所有版本世界书的全局启用，并恢复内置注入。'
+            + '世界书文件仍保留，可在世界书面板自行删除。', false);
         deps().showToast('success', '已恢复内置注入');
     }
 
@@ -2797,14 +3654,11 @@ jQuery(async function () {
        2) 动态 import world-info.js 读 world_info.globalSelect
        3) 已保存的设置（个别版本可用） */
     async function isWorldbookActive() {
-        var helperList = await readGlobalSelectFromHelper();
-        if (Array.isArray(helperList)) return helperList.indexOf(WORLDBOOK_NAME) >= 0;
-
-        var runtimeList = await readGlobalSelectFromRuntime();
-        if (Array.isArray(runtimeList)) return runtimeList.indexOf(WORLDBOOK_NAME) >= 0;
-
-        var saved = getSavedGlobalSelect();
-        return Array.isArray(saved) && saved.indexOf(WORLDBOOK_NAME) >= 0;
+        /* 用和写入同一套「读所有来源」的逻辑来判断，
+           否则会出现「写进了 A 来源、却按 B 来源显示未启用」的矛盾。 */
+        var cur = await readGlobalSelectAny();
+        if (cur.list === null) return false;
+        return cur.list.indexOf(WORLDBOOK_NAME) >= 0;
     }
 
     async function refreshWorldbookStatus() {
@@ -2840,21 +3694,26 @@ jQuery(async function () {
             }
         }
         window.__cpabInstructionWarned = false;
-        settings.drawingInstruction = text;
+        var pm = currentPromptModel();
+        setCustomInstructionOf(pm, text);
         saveSettings();
         applyDrawingInstruction();
         refreshInstructionEditorInfo();
-        setInstructionEditorMessage('已保存，下一条回复就会用新指令。', false);
+        setInstructionEditorMessage('已保存到「' + promptModelLabel(pm)
+            + '」这套，下一条回复就会用新指令。', false);
         showToast('success', '绘图指令已保存');
     }
 
     async function resetInstructionToDefault() {
-        if (!window.confirm('恢复成插件内置的推荐指令？你自己改过的内容会被清空。')) return;
-        settings.drawingInstruction = '';
+        var pm = currentPromptModel();
+        if (!window.confirm('把「' + promptModelLabel(pm)
+                + '」这套恢复成插件内置的推荐指令？你自己改过的内容会被清空。')) return;
+        setCustomInstructionOf(pm, '');
         saveSettings();
         await loadInstructionIntoEditor();
         applyDrawingInstruction();
-        setInstructionEditorMessage('已恢复推荐指令，下一条回复就会生效。', false);
+        setInstructionEditorMessage('已恢复「' + promptModelLabel(pm)
+            + '」的推荐指令，下一条回复就会生效。', false);
         showToast('success', '已恢复推荐指令');
     }
 
@@ -2884,12 +3743,35 @@ jQuery(async function () {
         $('#cpab-model').on('change', function () {
             collectSettingsFromUi();
             renderModelNote();
+            /* 提示词版本跟着画图模型走：两个模型要的是两种写法的提示词，
+               不该再让用户手动选一次。 */
+            var prevPromptModel = settings.promptModel;
+            settings.promptModel = normalizePromptModel(settings.model);
+            syncPromptModelUi();
             saveSettings();
+            applyDrawingInstruction();
             var m = null;
             for (var i = 0; i < availableModels.length; i++) {
                 if (availableModels[i].id === settings.model) { m = availableModels[i]; break; }
             }
-            showToast('success', '已切换到「' + (m ? m.label : settings.model) + '」，下次出图生效');
+            var modelLabel = m ? m.label : settings.model;
+            var promptChanged = (prevPromptModel !== settings.promptModel);
+            showToast('success', '已切换到「' + modelLabel + '」'
+                + (promptChanged ? '，绘图提示词已自动换成对应版本' : '')
+                + '，下次出图生效');
+            /* 世界书也跟着换：把当前版本那本挂到全局，另一本自动关掉。
+               挂上了弹成功，没挂上弹手动办法。 */
+            autoMountForCurrentModel().catch(function () { /* 失败不影响出图 */ });
+        });
+
+        /* 手动指定提示词版本（世界书跟着切） */
+        $('#cpab-prompt-model').on('change', function () {
+            settings.promptModel = normalizePromptModel($(this).val());
+            saveSettings();
+            applyDrawingInstruction();
+            loadInstructionIntoEditor().catch(function () {});
+            syncPromptModelUi();
+            autoMountForCurrentModel().catch(function () { /* 失败不影响出图 */ });
         });
         // 切换分辨率时立刻刷新消耗提示（高清档慢约 10 秒、扣 2 次）
         $('#cpab-resolution').on('change', function () {
@@ -3039,7 +3921,9 @@ jQuery(async function () {
         /* 从地址栏抓邀请码（好友分享的链接会带 ?ref=XXX），存着等领取时用 */
         captureInviteCodeFromUrl();
         if (settings.apiKey) { refreshReferral(true); }
-        bindSettingsEvents();
+        /* 迁移旧版单份自定义指令（老用户升级上来时用），必须在读设置前跑 */
+    migrateLegacyInstruction();
+    bindSettingsEvents();
         bindGlobalEvents();
         refreshButtons();
         scheduleAutoGenerate('INIT');
