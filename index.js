@@ -76,7 +76,9 @@ jQuery(async function () {
     var availableModels = [];
     var modelsLoaded = false;
     /* 每个模型可能有自己的可用步数（服务端 /v1/models 会给）。
-       例：Qwen-Image-2.1 走 Turbo8 蒸馏，只允许 8 步。 */
+       例：Qwen-Image 2.1 走官方 Turbo 蒸馏，档位是 4/8/12；
+           Z-Image-Turbo 是 4/6/8。
+       界面上这三档统一叫「速度快 / 均衡 / 增加细节」。 */
     function stepsForModel(modelId) {
         var mid = String(modelId || settings.model || '');
         for (var i = 0; i < availableModels.length; i++) {
@@ -101,14 +103,43 @@ jQuery(async function () {
         var list = stepsForModel(mid);
         return list.length ? list[list.length - 1] : defaultSettings.steps;
     }
-    /* 画质档位的显示名。界面上只给用户看「低/中/高」，
+    /* 画质档位的显示名。界面上只给用户看「速度快/均衡/增加细节」，
        背后的真实步数由服务端按模型给（见 stepsForModel）。
-       Z-Image 是 4/6/8，Qwen-Image-2.1 是 20/30/40，
+       Z-Image-Turbo 是 4/6/8，Qwen-Image 2.1 Turbo 是 4/8/12，
        直接显示数字会让用户一头雾水，所以统一叫「画质」。 */
-    var QUALITY_LABELS = ['低（最快）', '中（均衡）', '高（最精细）'];
+    var QUALITY_LABELS = ['速度快', '均衡', '增加细节'];
+/* 标签是「按位置」的：第 1/2/3 档。步数按各模型自己的表走
+   （zturbo 4/6/8，qwen21 4/8/12），所以标签描述的是「这一档的取向」
+   而不是某个具体步数。 */
     function qualityLabelOf(list, index) {
         return QUALITY_LABELS[index] || (String(list[index]) + ' 档');
     }
+/* seed 加 2（字符串运算）。
+       为什么不用 Number：
+           seed 是 16 位随机数，接近 JS 安全整数上限（2^53-1），
+           用 Number 会舍入，导致复现不出同一张图。
+       为什么能只改「个位那一小段」：
+           加 2 最多影响末两位，前面的位不会有进位影响。
+           真要进位也没关系 —— 我们只改动的那几位。
+       MAX_SEED_STR 是 2^64-1，超出就回绕。 */
+    var MAX_SEED_STR = '18446744073709551615';
+    function seedPlus2(seedStr) {
+        var s = String(seedStr || '').trim();
+        if (!/^\d+$/.test(s)) { return s; }
+        var tail = s.length >= 4 ? s.slice(-4) : s;
+        var head = s.slice(0, s.length - tail.length);
+        var n = parseInt(tail, 10) + 2;
+        var tailStr = String(n);
+        while (tailStr.length < tail.length) { tailStr = '0' + tailStr; }
+        var out = head + tailStr;
+        /* 位数变多说明进位了，正常；超出 2^64-1 就回绕 */
+        if (out.length > MAX_SEED_STR.length ||
+            (out.length === MAX_SEED_STR.length && out > MAX_SEED_STR)) {
+            out = '0';
+        }
+        return out;
+    }
+
     /* 取当前模型的「下一档」步数，用于固定种子微调 */
     function nextQualityStep(modelId, step) {
         var list = stepsForModel(modelId);
@@ -267,8 +298,8 @@ jQuery(async function () {
     /* 插件版本号。改完代码后这里会跟着变，
        如果设置面板里显示的还是旧号，说明浏览器加载的是缓存，
        需要硬刷新（Ctrl+Shift+R）。 */
-    var EXTENSION_VERSION = '1.25.2';
-    var EXTENSION_BUILD = '2026-10-11 18:36:08';
+    var EXTENSION_VERSION = '1.25.5';
+    var EXTENSION_BUILD = '2026-10-11 19:44:16';
 
     /* 暴露到 window，方便在控制台一键确认「浏览器到底加载了哪版代码」：
            __momoDrawPlugin.version      版本号
@@ -1960,14 +1991,14 @@ jQuery(async function () {
         if (mode === 'optimize') {
             if (!last) throw new Error('这层还没有历史图片，请先点一次生成图片或随机重绘');
             if (!Number.isFinite(Number(last.seed))) throw new Error('找不到上一次生成的 seed');
-            if (!Number.isFinite(Number(last.steps))) throw new Error('找不到上一次生成的步数');
-            payload.seed = Number(last.seed);
-            /* 把画质提一档（不是固定 +2）：Z-Image 是 4/6/8，
-               Qwen-Image-2.1 是 20/30/40，增量按模型自己的表走 */
-            var nextStep = nextQualityStep(normalizeModel(settings.model), last.steps);
-            if (!nextStep) throw new Error('已经是最高画质档，无法再往上提');
-            payload.steps = nextStep;
-            actionLabel = '固定 seed 优化（画质 ' + last.steps + ' → ' + nextStep + '）';
+            /* 固定种子微调 = 【种子 +2】，其余参数（步数/尺寸）完全不变。
+               种子一动，画面构图基本保持，但细节和光线会有微调 ——
+               这就是「微调」的含义。 */
+            var newSeed = seedPlus2(last.seed);
+            if (!newSeed) throw new Error('上一次的 seed 不合法，无法微调');
+            payload.seed = newSeed;
+            payload.steps = Number(last.steps);
+            actionLabel = '固定种子微调（seed ' + last.seed + ' → ' + newSeed + '）';
         }
         // 把本次要消耗的次数写进按钮提示，高清档会显示「扣 2 次」
         if (options.cost > 1) {
@@ -2211,7 +2242,7 @@ jQuery(async function () {
             showToast('success', '出图完成，用时 ' + formatGenSeconds(lastGenSeconds)
                 + '，' + formatQuota(data.quota));
             setTimeout(function () {
-                setButtonState($button, '', mode === 'random' ? '随机重绘' : (mode === 'optimize' ? '固定种子，把画质提一档' : '生成图片'));
+                setButtonState($button, '', mode === 'random' ? '随机重绘' : (mode === 'optimize' ? '固定种子微调（种子 +2）' : '生成图片'));
             }, 2500);
         } finally {
             refreshQueueStatus(true).catch(function () {});
