@@ -298,8 +298,8 @@ jQuery(async function () {
     /* 插件版本号。改完代码后这里会跟着变，
        如果设置面板里显示的还是旧号，说明浏览器加载的是缓存，
        需要硬刷新（Ctrl+Shift+R）。 */
-    var EXTENSION_VERSION = '1.25.5';
-    var EXTENSION_BUILD = '2026-10-11 19:44:16';
+    var EXTENSION_VERSION = '1.27.0';
+    var EXTENSION_BUILD = '2026-10-11 20:14:06';
 
     /* 暴露到 window，方便在控制台一键确认「浏览器到底加载了哪版代码」：
            __momoDrawPlugin.version      版本号
@@ -416,6 +416,57 @@ jQuery(async function () {
 
     /* 从服务端读可选模型，填进下拉框。
        做成动态读取：以后服务端加模型，插件不用改。 */
+    /* 切换画图模型：改设置、同步提示词版本、同步世界书、提示用户。
+       设置页的下拉和消息区新增的下拉【共用这一个函数】，
+       保证两条路走出来的行为完全一致。
+
+       为什么抽出来：
+         之前只有设置页的 #cpab-model 有这段逻辑。消息区加了模型下拉后，
+         如果各写一份，很容易改了一边忘了另一边（这次已经踩过类似的坑）。 */
+    function applyModelSelection(modelId, options) {
+        options = options || {};
+        var next = normalizeModel(modelId);
+        if (!next) { return; }
+
+        var prevModel = settings.model;
+        var prevPromptModel = settings.promptModel;
+        var changed = (prevModel !== next);
+
+        settings.model = next;
+        /* 提示词版本跟着画图模型走：两个模型要的是两种写法的提示词，
+           不该再让用户手动选一次。 */
+        settings.promptModel = normalizePromptModel(next);
+        if (typeof renderModelNote === 'function') { renderModelNote(); }
+        if (typeof renderModelSelect === 'function') { renderModelSelect(); }
+        if (typeof syncPromptModelUi === 'function') { syncPromptModelUi(); }
+        saveSettings();
+        applyDrawingInstruction();
+        syncModelSelects();
+        /* 换模型了 —— 画质档位表也跟着换（两个模型的档位不同）。
+           settings.steps 由 normalizeSteps 兜底到新模型的默认档。 */
+        settings.steps = normalizeSteps(settings.steps);
+        syncStepsSelects();
+        if (typeof renderStepsSelect === 'function') { renderStepsSelect(); }
+
+        var m = null;
+        for (var i = 0; i < availableModels.length; i++) {
+            if (availableModels[i].id === next) { m = availableModels[i]; break; }
+        }
+        var modelLabel = m ? m.label : next;
+        var promptChanged = (prevPromptModel !== settings.promptModel);
+
+        if (!changed) {
+            showToast('info', '当前已经是「' + modelLabel + '」');
+            return;
+        }
+        showToast('success', '已切换到「' + modelLabel + '」'
+            + (promptChanged ? '，绘图提示词已自动换成对应版本' : '')
+            + '，下次出图生效');
+        /* 世界书也跟着换：把当前版本那本挂到全局，另一本自动关掉。
+           挂上了弹成功，没挂上弹手动办法。 */
+        autoMountForCurrentModel().catch(function () { /* 失败不影响出图 */ });
+    }
+
     async function refreshModels(silent) {
         try {
             var data = await apiRequest('/v1/models', { method: 'GET' });
@@ -426,6 +477,8 @@ jQuery(async function () {
             if (data.default && !settings.model) settings.model = String(data.default);
             renderModelSelect();
             renderModelNote();
+            /* 消息区的下拉也要跟着填上（它可能比模型列表先创建） */
+            syncModelSelects();
         } catch (error) {
             if (!silent) {
                 // 读不到就保持默认，不打断使用
@@ -1625,6 +1678,9 @@ jQuery(async function () {
                只有服务端明确给了才更新，拿不到就保留上一次的值，避免闪成空。 */
             if (data.queue && data.queue.current_model) {
                 lastCurrentModel = String(data.queue.current_model);
+            /* 「当前在线」变了 —— 消息区下拉的「（当前在线）」标注也要跟着改。
+               否则用户看到的还是旧的，会误以为已经切好了。 */
+            syncModelSelects();
             }
             queueState = 'online';
             updateQueueBadges();
@@ -1717,14 +1773,131 @@ jQuery(async function () {
         if (!$target.find('.cpab-queue-badge').length) {
             $target.append('<span class="cpab-queue-badge" title="当前提交任务前预计需要等待的任务数"></span>');
         }
+        /* 模型下拉：放在画风【上面】，这样不用进设置也能换模型。
+           顺序很重要 —— 先 append 模型行，再 append 画风行，
+           否则画风会跑到上面去。 */
+        if (!$target.find('.cpab-inline-model-row').length) {
+            var $modelRow = $('<label class="cpab-inline-model-row"><span>模型</span><select class="cpab-inline-model-select text_pole" title="切换画图模型（换模型要重启引擎并预热，约 2 分钟，出图前会自动完成）"></select></label>');
+            $target.append($modelRow);
+            populateModelSelect($modelRow.find('.cpab-inline-model-select'));
+        }
+        /* 画质下拉：放在模型下面、画风上面。
+           选项按【当前模型】的步数表生成 —— 换模型后选项会跟着换。 */
+        if (!$target.find('.cpab-inline-steps-row').length) {
+            var $stepsRow = $('<label class="cpab-inline-steps-row"><span>画质</span><select class="cpab-inline-steps-select text_pole" title="切换画质档位（速度快 / 均衡 / 增加细节）。档位越高越慢，但细节越多"></select></label>');
+            $target.append($stepsRow);
+            populateStepsSelect($stepsRow.find('.cpab-inline-steps-select'));
+        }
         if (!$target.find('.cpab-inline-style-row').length) {
             var $styleRow = $('<label class="cpab-inline-style-row"><span>画风</span><select class="cpab-inline-style-select text_pole" title="切换本层及后续生图使用的画风"></select></label>');
             $target.append($styleRow);
             populateStylePresetSelect($styleRow.find('.cpab-inline-style-select'));
         }
+        /* 每次刷新都同步一次模型/画质下拉 */
+        syncModelSelects();
+        syncStepsSelects();
         $target.find('.cpab-mes-button, .cpab-random-button, .cpab-optimize-button').attr('data-cpab-mesid', String(messageId));
         $target.find('.cpab-inline-style-select').val(getStylePreset(settings.stylePreset).id);
         updateQueueBadges();
+    }
+
+    /* 填「画质」下拉。选项来自当前模型的步数表（stepsForModel），
+       标签用 QUALITY_LABELS（速度快 / 均衡 / 增加细节）。
+       换模型后要重新填 —— 两个模型的档位数可能不同。 */
+    function populateStepsSelect($select) {
+        if (!$select || !$select.length) { return; }
+        var list = currentAllowedSteps();
+        var want = normalizeSteps(settings.steps);
+        $select.each(function () {
+            var $cur = $(this);
+            $cur.empty();
+            list.forEach(function (n, i) {
+                $cur.append($('<option></option>').val(String(n))
+                    .text(qualityLabelOf(list, i)));
+            });
+            $cur.val(String(want));
+        });
+    }
+
+    /* 同步所有消息里的画质下拉。
+       两种情况需要重建：
+         · 选项和当前模型的步数表对不上（换了模型）
+         · 还没填过
+       否则只更新选中值，不重建（避免打断用户）。 */
+    function syncStepsSelects() {
+        var $all = $('.cpab-inline-steps-select');
+        if (!$all.length) { return; }
+        var list = currentAllowedSteps();
+        var want = String(normalizeSteps(settings.steps));
+        var wantCount = list.length;
+        var wantVals = list.map(String).join(',');
+        $all.each(function () {
+            var $cur = $(this);
+            var vals = $cur.find('option').map(function () {
+                return String($(this).val());
+            }).get().join(',');
+            if (vals !== wantVals || $cur.find('option').length !== wantCount) {
+                populateStepsSelect($cur);
+                return;
+            }
+            if ($cur.val() !== want) { $cur.val(want); }
+        });
+    }
+
+    /* 填「模型」下拉。选项来自服务端 /v1/models（availableModels）。
+       当前在线那个后面加「（当前在线）」，用户一眼看出要不要等切换。 */
+    function populateModelSelect($select) {
+        if (!$select || !$select.length) { return; }
+        var list = availableModels.length ? availableModels : [];
+        var want = normalizeModel(settings.model);
+        $select.each(function () {
+            var $cur = $(this);
+            $cur.empty();
+            if (!list.length) {
+                /* 还没拿到服务端列表：放一个占位，等 loadModels 回来再填 */
+                $cur.append($('<option></option>').val(want).text(modelLabelOf(want) || want));
+                $cur.val(want);
+                return;
+            }
+            list.forEach(function (m) {
+                var label = m.label || m.id;
+                if (m.id === lastCurrentModel) { label += '（当前在线）'; }
+                $cur.append($('<option></option>').val(m.id).text(label));
+            });
+            $cur.val(want);
+        });
+    }
+
+    /* 同步所有消息里的模型下拉：选中值 + 「当前在线」标注。
+       为什么每次都要同步：
+         · 当前在线模型会变（别的用户可能切了，徽标每 5 秒刷新）
+         · 用户在设置里改了模型，这里也要跟上 */
+    function syncModelSelects() {
+        var $all = $('.cpab-inline-model-select');
+        if (!$all.length) { return; }
+        var want = normalizeModel(settings.model);
+        $all.each(function () {
+            var $cur = $(this);
+            /* 选项数量不对（或还没填过）就重建 */
+            if ($cur.find('option').length !== availableModels.length) {
+                populateModelSelect($cur);
+                return;
+            }
+            /* 只更新文案，不重建 —— 避免打断用户正在选的动作 */
+            $cur.find('option').each(function () {
+                var $opt = $(this);
+                var id = String($opt.val() || '');
+                var found = null;
+                for (var i = 0; i < availableModels.length; i++) {
+                    if (availableModels[i].id === id) { found = availableModels[i]; break; }
+                }
+                if (!found) { return; }
+                var label = found.label || found.id;
+                if (id === lastCurrentModel) { label += '（当前在线）'; }
+                if ($opt.text() !== label) { $opt.text(label); }
+            });
+            if ($cur.val() !== want) { $cur.val(want); }
+        });
     }
 
     function refreshButtons() {
@@ -3825,27 +3998,30 @@ jQuery(async function () {
         // 切换画图模型：只改本地设置并提示，真正卸载/载入由服务端在生成时做
         $('#cpab-model').on('change', function () {
             collectSettingsFromUi();
-            renderModelNote();
-            /* 提示词版本跟着画图模型走：两个模型要的是两种写法的提示词，
-               不该再让用户手动选一次。 */
-            var prevPromptModel = settings.promptModel;
-            settings.promptModel = normalizePromptModel(settings.model);
-            syncPromptModelUi();
-            saveSettings();
-            applyDrawingInstruction();
-            var m = null;
-            for (var i = 0; i < availableModels.length; i++) {
-                if (availableModels[i].id === settings.model) { m = availableModels[i]; break; }
-            }
-            var modelLabel = m ? m.label : settings.model;
-            var promptChanged = (prevPromptModel !== settings.promptModel);
-            showToast('success', '已切换到「' + modelLabel + '」'
-                + (promptChanged ? '，绘图提示词已自动换成对应版本' : '')
-                + '，下次出图生效');
-            /* 世界书也跟着换：把当前版本那本挂到全局，另一本自动关掉。
-               挂上了弹成功，没挂上弹手动办法。 */
-            autoMountForCurrentModel().catch(function () { /* 失败不影响出图 */ });
+            applyModelSelection(settings.model, { from: 'settings' });
         });
+
+        /* 消息区的模型下拉是动态创建的，必须用事件委托绑定。
+           它和设置页的 #cpab-model 走同一个 applyModelSelection。 */
+        $(document).off('change.cpabInlineModel')
+            .on('change.cpabInlineModel', '.cpab-inline-model-select', function () {
+                applyModelSelection(String($(this).val() || ''), { from: 'inline' });
+            });
+
+        /* 消息区的画质下拉。改了立刻存，下次出图用它。 */
+        $(document).off('change.cpabInlineSteps')
+            .on('change.cpabInlineSteps', '.cpab-inline-steps-select', function () {
+                var val = normalizeSteps($(this).val());
+                settings.steps = val;
+                saveSettings();
+                syncStepsSelects();
+                if (typeof renderStepsSelect === 'function') { renderStepsSelect(); }
+                var list = currentAllowedSteps();
+                var idx = list.indexOf(val);
+                showToast('success', '画质已设为「'
+                    + (idx >= 0 ? qualityLabelOf(list, idx) : val)
+                    + '」（' + val + ' 步），下次出图生效');
+            });
 
         /* 手动指定提示词版本（世界书跟着切） */
         $('#cpab-prompt-model').on('change', function () {

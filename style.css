@@ -602,6 +602,52 @@
   font-size: 13px;
 }
 
+/* 「画质」和「模型」下拉：和画风行同一套排版 */
+.cpab-inline-steps-row {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 3px;
+  font-size: 12px;
+  opacity: 0.96;
+}
+
+.cpab-inline-steps-row > span {
+  flex: 0 0 auto;
+  opacity: 0.78;
+}
+
+.cpab-inline-steps-select {
+  width: min(320px, calc(100% - 40px));
+  min-height: 34px;
+  font-size: 13px;
+}
+
+/* 「模型」下拉：和画风行同一套排版，只是颜色略突出（它影响出图时间） */
+.cpab-inline-model-row {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 3px;
+  font-size: 12px;
+  opacity: 0.96;
+}
+
+.cpab-inline-model-row > span {
+  flex: 0 0 auto;
+  opacity: 0.78;
+}
+
+.cpab-inline-model-select {
+  width: min(320px, calc(100% - 40px));
+  min-height: 34px;
+  font-size: 13px;
+}
+
 .cpab-queue-badge {
   /* 多行：手机上不再挤成一长条被截断 */
   display: inline-flex;
@@ -685,12 +731,23 @@
     font-size: 16px;
   }
 
-  .cpab-inline-style-row {
+  .cpab-inline-style-row,
+  .cpab-inline-model-row,
+  .cpab-inline-steps-row {
     width: 100%;
     gap: 6px;
   }
 
   .cpab-inline-style-select {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    min-height: 42px;
+    font-size: 16px;
+  }
+
+  .cpab-inline-model-select,
+  .cpab-inline-steps-select {
     flex: 1 1 auto;
     width: auto;
     min-width: 0;
